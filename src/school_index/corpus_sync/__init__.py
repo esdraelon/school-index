@@ -6,5 +6,7 @@ plus Repository for the ``corpus_items`` / ``sync_state`` schemas.
 
 Incremental by content hash + source identity; vanished resources
 become tombstones; per-item failures are stored records, never
-silent skips. The sync engine lands in M1 (shell only in M0).
+silent skips. The sync engine (M1): client.py (the MCP contract),
+strategies.py + fetch.py (downloads), store.py (the corpus of
+record), harvester.py (the run), cli.py (the composition root).
 """
