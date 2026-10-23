@@ -176,7 +176,7 @@ class EmbedRunner:
         """Chunk + embed + store one item; returns its chunk count."""
         text = self._extract_store.get_text(item_id=item_id)
         if not isinstance(text, Found):
-            raise RuntimeError(f"extraction says embedded-able but no text for {item_id}")
+            raise RuntimeError(f"embeddable outcome but no text row for {item_id}")
         chunks = chunk_text(text.value.text, item_id=item_id)
         vectors = self._provider.embed_documents([chunk.text for chunk in chunks])
         self._embed_store.replace_item_chunks(

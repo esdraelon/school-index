@@ -235,7 +235,7 @@ class BlobBackend:
 
 def load_vec(connection: sqlite3.Connection) -> None:
     """Load the sqlite-vec extension into ``connection``."""
-    import sqlite_vec
+    import sqlite_vec  # type: ignore[import-untyped]
 
     connection.enable_load_extension(True)
     try:
@@ -349,9 +349,11 @@ class EmbedStore:
                     "VALUES (?, ?, ?, ?)",
                     (chunk.item_id, chunk.ordinal, chunk.heading, chunk.text),
                 )
+                if cursor.lastrowid is None:  # an INSERT always yields one
+                    raise RuntimeError("chunk insert produced no row id")
                 self._backend.put(
                     connection,
-                    chunk_id=int(cursor.lastrowid),
+                    chunk_id=cursor.lastrowid,
                     model_id=state.model_id,
                     vector=vector,
                 )

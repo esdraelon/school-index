@@ -150,7 +150,7 @@ class OnnxBgeProvider:
             if self._session_factory is not None:
                 self._session = self._session_factory(path)
             else:
-                import onnxruntime
+                import onnxruntime  # type: ignore[import-untyped]
 
                 self._session = onnxruntime.InferenceSession(
                     str(path), providers=["CPUExecutionProvider"]

@@ -55,14 +55,37 @@ pip install -e '.[dev]'
 ./scripts/verify.sh   # unit tests, coverage >=90, mypy strict, 500-LOC cap
 ```
 
-Status: **M2** — `corpus_sync` (M1) and `doc_extract` (M2) landed.
-The harvester pulls Sam's resources through the adapter's MCP
-contract into the corpus store (SQLite metadata + original files on
-disk), with per-item failure records, tombstones, and idempotent
-re-runs; the extractor then turns harvested files into text —
-stored in `item_text` with `[[page N]]` page-boundary markers —
-under a per-item outcome record. Milestones M3–M6 per
+Status: **M3** — `corpus_sync` (M1), `doc_extract` (M2), and
+`embed_index` (M3) landed. The harvester pulls Sam's resources
+through the adapter's MCP contract into the corpus store (SQLite
+metadata + original files on disk), with per-item failure records,
+tombstones, and idempotent re-runs; the extractor then turns
+harvested files into text — stored in `item_text` with
+`[[page N]]` page-boundary markers — under a per-item outcome
+record; the embedder chunks that text on page structure and embeds
+it with BAAI/bge-small-en-v1.5 on ONNX, delta-only, under a
+per-item `embed_state` record. Milestones M4–M6 per
 `docs/PROJECT-INDEX.md` in school-assistant.
+
+## Vector store (M3): sqlite-vec, with a tested fallback
+
+Vectors live behind a `VectorBackend` interface in
+`embed_index/store.py` with two implementations:
+
+- **`sqlite-vec` (the design, in use):** a vec0 virtual table with
+  the cosine metric. Verified loadable and KNN-correct on this
+  repo's dev machine and on hal9k (aarch64) — the live build over
+  the real corpus runs on it.
+- **`blob-numpy` (fallback):** vectors as BLOBs, brute-force
+  cosine in numpy. `EmbedStore.open` probes the extension and
+  picks this automatically if vec0 cannot load; the contract
+  tests run identically over both backends, and every report line
+  names the backend actually in use (`backend=` in the CLI
+  output).
+
+Model files live under `<corpus root>/models` (fetch once with
+`python -m school_index.embed_index fetch-model`; runs are
+offline after that).
 
 ## Store layering (M2)
 
@@ -76,6 +99,10 @@ and one repository per pipeline stage over its own tables:
   migration v2), through `ExtractStore`. It *reads* items and blob
   paths through the `CorpusStore` — stages consume each other's
   records through repositories, never each other's SQL.
+- `embed_index` owns `chunks` / `embed_state` (schema: migration
+  v3) plus the vector backend's `embeddings` table, through
+  `EmbedStore`. It *reads* items and extracted text through the
+  `CorpusStore` / `ExtractStore` repositories.
 
 `doc_extract`'s registry (`build_extractors`) holds exactly one
 strategy in v1 — `pdf` via pypdf — because the live corpus's
