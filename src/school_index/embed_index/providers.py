@@ -4,8 +4,11 @@ Pattern: Strategy + Registry. An ``EmbeddingProvider`` turns text
 into fixed-dimension, L2-normalized vectors; the runner and the
 search path depend only on the protocol, and the composition root
 selects through ``build_providers`` — there is no provider if/else
-anywhere (coding standard). Bedrock slots in as a second registry
-entry when M5's benchmark needs it.
+anywhere (coding standard). The production registry carries the
+ONNX arm; the Bedrock strategy lives in this module too, and M5's
+benchmark composes its own registry from the production one plus
+the Bedrock entry (production serving has no reason to wire a
+paid, credentialed cloud arm).
 
 The protocol separates ``embed_documents`` from ``embed_query``
 because bge models are asymmetric: queries carry an instruction
@@ -25,6 +28,7 @@ Session/tokenizer construction is injectable (``session_factory`` /
 without the real model files.
 """
 
+import json
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Protocol
@@ -172,6 +176,90 @@ class OnnxBgeProvider:
         return self._tokenizer
 
 
+#: The Bedrock model the benchmark arm embeds with (Titan Embed v2).
+BEDROCK_MODEL_ID = "amazon.titan-embed-text-v2:0"
+
+
+class BedrockTitanProvider:
+    """amazon.titan-embed-text-v2:0 via Bedrock Runtime. Pattern: Strategy.
+
+    The benchmark's cloud arm (M5): managed embeddings, pay-per-call,
+    content leaves the host — everything the ONNX arm is not, which
+    is exactly why it is the comparison. Titan is symmetric: queries
+    embed identically to documents (no instruction prefix; the
+    protocol's asymmetry exists for bge-style models and this class
+    encodes "no prefix" by construction, not by a flag).
+
+    Lazy, mirroring the ONNX provider: the boto3 client builds on
+    first embed through an injectable ``client_factory`` (tests mock
+    boto3 at that edge — no AWS SDK is imported at module import).
+    On a machine without AWS credentials, first use raises boto3's
+    own NoCredentialsError; the benchmark records that verbatim as
+    the arm's blocked reason rather than papering over it.
+    """
+
+    model_id = "bedrock-titan-embed-v2"
+    dim = 1024
+
+    def __init__(
+        self,
+        *,
+        region: str | None = None,
+        client_factory: Callable[[], object] | None = None,
+    ) -> None:
+        self._region = region
+        self._client_factory = client_factory
+        self._client: object | None = None
+
+    # -- protocol ------------------------------------------------------
+
+    def embed_documents(self, texts: Sequence[str]) -> list[Vector]:
+        return self._embed(list(texts))
+
+    def embed_query(self, text: str) -> Vector:
+        return self._embed([text])[0]
+
+    # -- internals -----------------------------------------------------
+
+    def _embed(self, texts: list[str]) -> list[Vector]:
+        if not texts:
+            return []
+        client = self._load_client()
+        vectors: list[Vector] = []
+        for text in texts:
+            body = json.dumps(
+                {"inputText": text, "dimensions": self.dim, "normalize": True}
+            )
+            response = client.invoke_model(  # type: ignore[attr-defined]
+                modelId=BEDROCK_MODEL_ID,
+                body=body,
+                contentType="application/json",
+                accept="application/json",
+            )
+            payload = json.loads(response["Body"].read())
+            vectors.append(tuple(float(x) for x in payload["embedding"]))
+        # Titan with normalize=true already returns unit vectors;
+        # normalize again so the protocol's invariant holds by this
+        # class's own construction, not by trusting the request flag.
+        normalized = _normalize(np.asarray(vectors, dtype=np.float32))
+        return [tuple(float(x) for x in row) for row in normalized]
+
+    def _load_client(self) -> object:
+        if self._client is None:
+            if self._client_factory is not None:
+                self._client = self._client_factory()
+            else:
+                import boto3  # type: ignore[import-untyped]
+
+                if self._region is not None:
+                    self._client = boto3.client(
+                        "bedrock-runtime", region_name=self._region
+                    )
+                else:
+                    self._client = boto3.client("bedrock-runtime")
+        return self._client
+
+
 def model_dir(models_dir: Path) -> Path:
     """Where the bge-small files live under a models root."""
     return models_dir / MODEL_SUBDIR
@@ -210,8 +298,11 @@ def download_model(models_dir: Path, *, client: httpx.Client | None = None) -> P
 def build_providers(*, models_dir: Path) -> Mapping[str, EmbeddingProvider]:
     """The production registry: model key → strategy.
 
-    v1 has exactly one arm — the design's ONNX default. The Bedrock
-    arm joins this mapping at M5 (benchmark), selected by config,
-    never by a branch in the runner.
+    v1 has exactly one arm — the design's ONNX default, pinned by
+    test. The Bedrock strategy is composed into the M5 benchmark's
+    own registry (see school_index.benchmark.arms), never here:
+    production serving and the embed pipeline select from this
+    mapping, and neither should be able to pick a paid cloud arm
+    by config accident.
     """
     return {"onnx-bge-small": OnnxBgeProvider(models_dir=models_dir)}

@@ -4,9 +4,14 @@ The ONNX provider's math (CLS pooling, L2 normalization, batching,
 the query-prefix asymmetry) is tested through injected fake
 session/tokenizer factories — the real model files are exercised
 by the skip-gated integration test at the bottom and by the live
-hal9k build, not by the unit suite.
+hal9k build, not by the unit suite. The Bedrock provider is tested
+the same way one level up: boto3 is mocked at the client_factory
+edge, so the request shape and response parsing are proven without
+the AWS SDK or credentials.
 """
 
+import io
+import json
 import math
 import os
 from collections.abc import Sequence
@@ -18,7 +23,9 @@ import numpy as np
 import pytest
 
 from school_index.embed_index.providers import (
+    BEDROCK_MODEL_ID,
     QUERY_PREFIX,
+    BedrockTitanProvider,
     ModelNotDownloaded,
     OnnxBgeProvider,
     build_providers,
@@ -123,6 +130,82 @@ def test_download_model_fetches_both_files_atomically(tmp_path: Path) -> None:
     # Idempotent: a second call keeps the same bytes (no re-fetch).
     download_model(tmp_path, client=client)
     assert (target / "model.onnx").read_bytes().endswith(b"onnx/model.onnx")
+
+
+# -- Bedrock (boto3 mocked at the client_factory edge) -----------------
+
+
+class FakeBedrockClient:
+    """Records invoke_model calls; answers with a canned embedding.
+
+    The canned vector is a deterministic function of the input text
+    (its length), 1024 values, deliberately NOT unit length — the
+    provider's own normalization is part of what's under test.
+    """
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    def invoke_model(self, **kwargs: object) -> dict[str, object]:
+        self.calls.append(kwargs)
+        body = json.loads(str(kwargs["body"]))
+        text = str(body["inputText"])
+        embedding = [
+            ((index * 31 + len(text)) % 13) / 6.0 - 1.0
+            for index in range(BedrockTitanProvider.dim)
+        ]
+        return {"Body": io.BytesIO(json.dumps({"embedding": embedding}).encode())}
+
+
+def test_bedrock_embed_documents_request_shape_and_normalization() -> None:
+    client = FakeBedrockClient()
+    provider = BedrockTitanProvider(client_factory=lambda: client)
+    vectors = provider.embed_documents(["first passage", "second"])
+    assert len(vectors) == 2
+    assert all(len(v) == BedrockTitanProvider.dim for v in vectors)
+    for vector in vectors:
+        assert math.sqrt(sum(x * x for x in vector)) == pytest.approx(1.0)
+    # One invoke_model call per text (Titan embeds singly), with the
+    # v2 request shape: dimensions + normalize pinned in the body.
+    assert len(client.calls) == 2
+    first = client.calls[0]
+    assert first["modelId"] == BEDROCK_MODEL_ID == "amazon.titan-embed-text-v2:0"
+    assert json.loads(str(first["body"])) == {
+        "inputText": "first passage",
+        "dimensions": 1024,
+        "normalize": True,
+    }
+
+
+def test_bedrock_query_embeds_symmetrically_without_prefix() -> None:
+    client = FakeBedrockClient()
+    provider = BedrockTitanProvider(client_factory=lambda: client)
+    provider.embed_query("a question")
+    body = json.loads(str(client.calls[0]["body"]))
+    # Titan has no instruction prefix: the raw text goes over the wire.
+    assert body["inputText"] == "a question"
+
+
+def test_bedrock_embed_of_nothing_never_builds_a_client() -> None:
+    def forbidden_factory() -> object:
+        raise AssertionError("client factory must not be called for []")
+
+    provider = BedrockTitanProvider(client_factory=forbidden_factory)
+    assert provider.embed_documents([]) == []
+
+
+def test_bedrock_client_failure_propagates_verbatim() -> None:
+    class NoCredentialsError(Exception):
+        pass
+
+    def failing_factory() -> object:
+        raise NoCredentialsError("Unable to locate credentials")
+
+    provider = BedrockTitanProvider(client_factory=failing_factory)
+    with pytest.raises(NoCredentialsError, match="Unable to locate credentials"):
+        provider.embed_query("anything")
+    # The benchmark's blocked-arm recording depends on this: the
+    # provider must not swallow or reword the SDK's own error.
 
 
 # -- real model (skip-gated) --------------------------------------------

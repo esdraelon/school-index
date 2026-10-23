@@ -42,6 +42,14 @@ dev = [
     "coverage",
     "mypy",
 ]
+# M5 (benchmark): the Bedrock arm's SDK. Optional because the provider
+# imports boto3 lazily (first embed, never at module import) — a host
+# without the extra, or without AWS credentials, still runs every
+# other arm, and the benchmark records the Bedrock arm as blocked
+# with the precise reason instead of failing.
+bedrock = [
+    "boto3>=1.34",
+]
 
 [tool.setuptools]
 package-dir = { "" = "src" }
