@@ -10,10 +10,15 @@ name = "school-index"
 version = "0.1.0"
 description = "School Index: resources harvested from the school adapter's MCP contract, extracted to text, chunked and embedded, and served as a search MCP on hal9k."
 requires-python = ">=3.12"
-# Runtime dependencies: none yet (M0 scaffold). The MCP SDK arrives with
-# M4 (index_mcp) and the embedding stack with M3 (embed_index) — each
-# milestone declares only what it imports.
-dependencies = []
+# Runtime dependencies, declared per milestone — only what the code
+# imports. M1 (corpus_sync): the official MCP Python SDK, client side
+# (the harvester consumes the school adapter through its MCP contract;
+# same pin as the adapter), and httpx (the download transport, imported
+# directly by corpus_sync.fetch). The embedding stack arrives with M3.
+dependencies = [
+    "mcp>=1.16,<2",
+    "httpx>=0.27",
+]
 
 [project.optional-dependencies]
 # `coverage` is declared explicitly (not left to pytest-cov's transitive
