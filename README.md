@@ -20,7 +20,9 @@ Planning and design live in the **school-assistant** repo:
   contract; lands originals + metadata in the corpus store,
   incrementally, with tombstones and per-item failure records.
 - **`doc_extract`** — format → extractor strategy registry
-  (Slides, Docs, Sheets, PDF) producing item text.
+  producing item text, with a stored outcome record per item
+  (extracted / empty / failed / not-extractable) and delta-only
+  re-runs keyed on the item's content hash.
 - **`embed_index`** — structure-aware chunking, an embedding
   provider strategy registry (ONNX default, Bedrock benchmark arm),
   and the sqlite-vec vector store.
@@ -53,8 +55,32 @@ pip install -e '.[dev]'
 ./scripts/verify.sh   # unit tests, coverage >=90, mypy strict, 500-LOC cap
 ```
 
-Status: **M1** — `corpus_sync` landed: the harvester pulls Sam's
-resources through the adapter's MCP contract into the corpus store
-(SQLite metadata + original files on disk), with per-item failure
-records, tombstones, and idempotent re-runs. Milestones M2–M6 per
+Status: **M2** — `corpus_sync` (M1) and `doc_extract` (M2) landed.
+The harvester pulls Sam's resources through the adapter's MCP
+contract into the corpus store (SQLite metadata + original files on
+disk), with per-item failure records, tombstones, and idempotent
+re-runs; the extractor then turns harvested files into text —
+stored in `item_text` with `[[page N]]` page-boundary markers —
+under a per-item outcome record. Milestones M3–M6 per
 `docs/PROJECT-INDEX.md` in school-assistant.
+
+## Store layering (M2)
+
+One corpus database (`corpus.db` under the corpus root), one
+ordered migration chain (in `corpus_sync/store.py`; append-only),
+and one repository per pipeline stage over its own tables:
+
+- `corpus_sync` owns `corpus_items` / `sync_state` and the blob
+  files, through `CorpusStore`.
+- `doc_extract` owns `item_text` / `extraction_state` (schema:
+  migration v2), through `ExtractStore`. It *reads* items and blob
+  paths through the `CorpusStore` — stages consume each other's
+  records through repositories, never each other's SQL.
+
+`doc_extract`'s registry (`build_extractors`) holds exactly one
+strategy in v1 — `pdf` via pypdf — because the live corpus's
+harvested files are all PDFs (Google exports and Drive downloads
+land as PDF). Formats with no registered strategy (and pointer-only
+`external-link` items) resolve to a stored `not-extractable`
+outcome; html/docx/slides strategies slot into the registry when
+the corpus grows them.
