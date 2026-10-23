@@ -29,6 +29,24 @@ from school_index.corpus_sync.lookup import Found, Lookup, Missing
 #: How repositories get connections: injected, per the pattern above.
 ConnectionFactory = Callable[[], sqlite3.Connection]
 
+
+def connect_file(db_path: Path) -> sqlite3.Connection:
+    """Open a connection to the corpus DB file, with estate pragmas.
+
+    WAL is the concurrency contract for the one-file, multi-process
+    shape: pipeline stages write while the index MCP serves reads,
+    and WAL is what lets readers and the single writer coexist
+    without blocking each other. The mode persists in the DB header
+    once set; applying it on every open keeps the guarantee from
+    depending on which process touched the file first.
+    ``busy_timeout`` smooths brief writer-vs-writer contention
+    (pipeline stages run in sequence, but the MCP never writes).
+    """
+    connection = sqlite3.connect(db_path)
+    connection.execute("PRAGMA journal_mode=WAL")
+    connection.execute("PRAGMA busy_timeout=5000")
+    return connection
+
 _V1 = """
 CREATE TABLE corpus_items (
     id           TEXT PRIMARY KEY,
@@ -169,7 +187,7 @@ class CorpusStore:
         db_path = root / "corpus.db"
 
         def factory() -> sqlite3.Connection:
-            return sqlite3.connect(db_path)
+            return connect_file(db_path)
 
         return cls(connection_factory=factory, files_root=root / "files")
 

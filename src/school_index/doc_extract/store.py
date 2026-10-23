@@ -24,7 +24,7 @@ import sqlite3
 from pathlib import Path
 
 from school_index.corpus_sync.lookup import Found, Lookup, Missing
-from school_index.corpus_sync.store import ConnectionFactory, migrate
+from school_index.corpus_sync.store import ConnectionFactory, connect_file, migrate
 from school_index.doc_extract.domain import (
     ExtractionOutcome,
     ExtractionState,
@@ -71,7 +71,7 @@ class ExtractStore:
         db_path = root / "corpus.db"
 
         def factory() -> sqlite3.Connection:
-            return sqlite3.connect(db_path)
+            return connect_file(db_path)
 
         return cls(connection_factory=factory)
 
