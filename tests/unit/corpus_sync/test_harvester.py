@@ -74,8 +74,10 @@ class ExplodingSource:
 class FakeDownloader:
     def __init__(self, responses: dict[str, RawResponse]) -> None:
         self.responses = responses
+        self.requested: list[str] = []
 
     def get(self, *, url: str) -> RawResponse:
+        self.requested.append(url)
         return self.responses[url]
 
 
@@ -157,6 +159,19 @@ def test_second_run_is_a_noop(store: CorpusStore, files_root: Path) -> None:
         i.source_ref: i.content_hash for i in store.items_for_student(student="sam")
     }
     assert hashes_after == hashes_before
+
+
+def test_repeated_resources_are_fetched_once(store: CorpusStore) -> None:
+    # The live payload repeats resources (one link rides 101 entries).
+    # First occurrence syncs; repeats count as unchanged, no re-fetch.
+    downloader = FakeDownloader(canned_downloads())
+    deck = resource(DECK_URL, title="Pythagorean slides")
+    source = FakeSource([deck, deck, deck])
+    report = make_harvester(store, source, downloader).run(student="sam")
+    assert report.total == 3
+    assert report.downloaded == 1 and report.unchanged == 2
+    assert downloader.requested == [DECK_EXPORT]  # fetched exactly once
+    assert len(store.items_for_student(student="sam")) == 1
 
 
 def test_vanished_resource_is_tombstoned(store: CorpusStore) -> None:

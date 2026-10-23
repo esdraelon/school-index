@@ -76,6 +76,14 @@ class Harvester:
         downloaded = link_only = unchanged = failed = 0
         failures: list[tuple[str, str]] = []
         for resource in resources:
+            if resource.source_ref in seen:
+                # The payload repeats resources — one team-site link
+                # is attached to 101 of the 200 live entries. The
+                # first occurrence this run already synced the row;
+                # a repeat is unchanged by construction and must not
+                # be re-fetched.
+                unchanged += 1
+                continue
             seen.add(resource.source_ref)
             strategy = self._strategy_for(resource.url)
             outcome = strategy.fetch(resource=resource, downloader=self._downloader)
