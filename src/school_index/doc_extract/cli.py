@@ -13,6 +13,7 @@ failure); 2 = configuration failure (nothing extracted).
 """
 
 import argparse
+import logging
 import os
 import sys
 
@@ -37,6 +38,12 @@ def main(argv: list[str] | None = None) -> int:
     except ConfigError as exc:
         print(f"config error: {exc}", file=sys.stderr)
         return 2
+
+    # pypdf warns (loudly, per object) about malformed numbers and
+    # the like in real-world PDFs; it recovers from every one of
+    # them, and a batch pass's output is the report line, not a
+    # warning stream. Errors still surface.
+    logging.getLogger("pypdf").setLevel(logging.ERROR)
 
     runner = ExtractionRunner(
         corpus_store=CorpusStore.open(config.corpus_root),
