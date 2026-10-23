@@ -39,6 +39,20 @@ undisturbed → timer armed.
   `index-mcp`, paths `["/mcp/index"]`) and the app itself
   (`INDEX_MCP_TOKEN`), same as the school MCP.
 
+## Ops notes
+
+- **WAL sidecars and the two-uid rule (learned 2026-10-23).**
+  `corpus.db`'s `-wal` / `-shm` sidecars are created by whichever
+  process opens the DB — the MCP container (uid 10001) or the
+  host pipeline (user `haliffer`) — and the creator's uid owns
+  them. The data dir therefore carries **default ACLs** granting
+  both uids rw on new files, and the existing sidecars carry
+  matching ACLs. If the pipeline ever reports `attempt to write a
+  readonly database`, check the **sidecar ACLs first**
+  (`getfacl ~/school-index-data/corpus.db-wal`): corpus.db itself
+  will look perfectly writable — it's the sidecar the other uid
+  created that is blocking the write.
+
 ## Ordered deploy steps (on hal9k)
 
 1. **Sync the code.** The hal9k clone (`~/school-index`) carries
