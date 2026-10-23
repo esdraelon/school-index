@@ -1,0 +1,50 @@
+# Build backend: setuptools (src layout), mirroring school-info-adapter —
+# its editable-install + package-dir handling is the estate's proven shape.
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "school-index"
+version = "0.1.0"
+description = "School Index: resources harvested from the school adapter's MCP contract, extracted to text, chunked and embedded, and served as a search MCP on hal9k."
+requires-python = ">=3.12"
+# Runtime dependencies: none yet (M0 scaffold). The MCP SDK arrives with
+# M4 (index_mcp) and the embedding stack with M3 (embed_index) — each
+# milestone declares only what it imports.
+dependencies = []
+
+[project.optional-dependencies]
+# pytest-cov pulls in the coverage module that scripts/verify.sh drives
+# directly (same two-stage shape as the adapter's gates).
+dev = [
+    "pytest",
+    "pytest-cov",
+    "mypy",
+]
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+# --- Quality gates (all enforced by scripts/verify.sh) ---
+
+[tool.pytest.ini_options]
+testpaths = ["tests/unit"]
+
+# Coverage gate: >=90% line coverage of the school_index package,
+# measured over the unit tests only. `coverage report` exits non-zero
+# below this.
+[tool.coverage.run]
+source = ["school_index"]
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true
+
+# Type gate: mypy strict over the whole package.
+[tool.mypy]
+strict = true
