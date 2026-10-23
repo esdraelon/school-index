@@ -152,7 +152,8 @@ class ArmSummary:
     top_chunk_hit1: float
     separation_resources: float | None
     separation_passages: float | None
-    separation_queries: int
+    separation_resources_n: int
+    separation_passages_n: int
     mean_latency_ms: float
     p50_latency_ms: float
     max_latency_ms: float
