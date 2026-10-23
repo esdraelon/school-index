@@ -23,6 +23,7 @@ as-is: extraction does not over-normalize what downstream stages
 may need to see verbatim.
 """
 
+import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -66,15 +67,35 @@ class ExtractionFailed:
 ExtractOutcome: TypeAlias = ExtractedText | ExtractionFailed
 
 
+#: Lone surrogates (U+D800–U+DFFF): what pypdf emits for glyphs it
+#: cannot map. They have no valid UTF-8 encoding.
+_SURROGATES = re.compile(r"[\ud800-\udfff]")
+
+
+def _storable(text: str) -> str:
+    """Make extracted text encodable: replace lone surrogates.
+
+    pypdf decodes some glyphs (broken ToUnicode maps — seen live in
+    Slides exports) to lone surrogate code points, which UTF-8, and
+    therefore SQLite, cannot encode. U+FFFD is the honest
+    placeholder: that glyph was never recoverable text. (The codec
+    ``errors="replace"`` substitute on encode is ``?``, not U+FFFD,
+    hence the explicit substitution.) Everything else passes
+    through untouched.
+    """
+    return _SURROGATES.sub("\ufffd", text)
+
+
 def render_pages(pages: Iterable[str]) -> str:
     """Render per-page text to the stored form with page markers.
 
     Each page becomes ``[[page N]]`` on its own line followed by the
-    page's text verbatim; pages join with a single newline. This is
-    the M3 chunker's input contract — change it only with M3.
+    page's text; pages join with a single newline. This is the M3
+    chunker's input contract — change it only with M3. The stored
+    form is always valid UTF-8 (see ``_storable``).
     """
     return "\n".join(
-        f"[[page {number}]]\n{text}"
+        f"[[page {number}]]\n{_storable(text)}"
         for number, text in enumerate(pages, start=1)
     )
 
@@ -89,11 +110,12 @@ class Extractor(Protocol):
         ...
 
 
-def _error_text(exc: Exception) -> str:
+def error_text(exc: Exception) -> str:
     """One-line, length-capped failure text for the stored record.
 
     Failure strings are tallied for display, so they must be stable
     and single-line: exception type + first line of its message.
+    Shared by the extractors and the runner's containment guard.
     """
     message = str(exc).splitlines()[0] if str(exc) else ""
     return f"{type(exc).__name__}: {message}"[:200]
@@ -115,7 +137,7 @@ class PdfExtractor:
             reader = PdfReader(str(path))
             pages = tuple(page.extract_text() or "" for page in reader.pages)
         except Exception as exc:  # containment is the contract here
-            return ExtractionFailed(error=_error_text(exc))
+            return ExtractionFailed(error=error_text(exc))
         return ExtractedText(pages=pages)
 
 

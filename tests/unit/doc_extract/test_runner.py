@@ -15,7 +15,7 @@ from school_index.corpus_sync.domain import CorpusItem, ItemStatus
 from school_index.corpus_sync.lookup import Found
 from school_index.corpus_sync.store import CorpusStore
 from school_index.doc_extract.domain import ExtractionOutcome, ExtractReport
-from school_index.doc_extract.extractors import build_extractors
+from school_index.doc_extract.extractors import ExtractedText, build_extractors
 from school_index.doc_extract.runner import ExtractionRunner
 from school_index.doc_extract.store import ExtractStore
 
@@ -172,6 +172,61 @@ def test_second_run_is_delta_only_and_failures_retry(
     state = world.extracts.get_state(item_id=items["good"].id)
     assert isinstance(state, Found)
     assert state.value.extracted_at.startswith("2026-10-23T14:00")
+
+
+class SurrogateExtractor:
+    """A strategy whose pages carry a lone surrogate (live-data shape)."""
+
+    name = "surrogate-fixture"
+
+    def extract(self, *, path: Path) -> ExtractedText:
+        return ExtractedText(pages=("glyph \udcff here",))
+
+
+class ExplodingExtractor:
+    """A strategy that breaks the protocol and raises."""
+
+    name = "exploding-fixture"
+
+    def extract(self, *, path: Path) -> ExtractedText:
+        raise RuntimeError("boom")
+
+
+def test_surrogate_text_is_stored_encodable(tmp_path: Path) -> None:
+    world = World(tmp_path / "corpus")
+    item = world.add(make_item("sam:https://example.com/glyphs"), blob=b"%PDF-x")
+    runner = ExtractionRunner(
+        corpus_store=world.corpus,
+        extract_store=world.extracts,
+        extractors={"pdf": SurrogateExtractor()},
+        now=lambda: T1,
+    )
+    report = runner.run()
+    assert report.extracted == 1
+    text = world.extracts.get_text(item_id=item.id)
+    assert isinstance(text, Found)
+    assert text.value.text == "[[page 1]]\nglyph \ufffd here"
+    text.value.text.encode("utf-8")  # the store accepted it; so must we
+
+
+def test_unexpected_extractor_exception_is_contained(
+    tmp_path: Path, make_pdf: Callable[[list[str]], bytes]
+) -> None:
+    world = World(tmp_path / "corpus")
+    bad = world.add(make_item("sam:https://example.com/bad"), blob=b"%PDF-x")
+    runner = ExtractionRunner(
+        corpus_store=world.corpus,
+        extract_store=world.extracts,
+        extractors={"pdf": ExplodingExtractor()},
+        now=lambda: T1,
+    )
+    report = runner.run()
+    assert report.failed == 1
+    assert report.failure_tally() == {"RuntimeError: boom": 1}
+    state = world.extracts.get_state(item_id=bad.id)
+    assert isinstance(state, Found)
+    assert state.value.outcome is ExtractionOutcome.FAILED
+    assert state.value.extractor == "exploding-fixture"
 
 
 def test_hash_change_reextracts_and_healed_failure_recovers(

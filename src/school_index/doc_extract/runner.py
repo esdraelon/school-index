@@ -13,9 +13,16 @@ Pattern: Pipeline (orchestration service). One ``run()``:
 
 Per-item containment: a corrupt file, a missing blob, an extractor
 failure — each becomes the item's stored FAILED record and the run
-continues. Failures are the one outcome that never delta-skips:
-the next run retries them, because a re-harvest or an extractor
-fix may have removed the cause.
+continues. The containment is total, not just over the extractor:
+an *unexpected* exception anywhere in one item's processing is
+caught by the run loop and folded into a FAILED record the same
+way (a live run died exactly there before this guard existed —
+a store write raised on one item's text and aborted the pass).
+Only a failure of the failure-record write itself propagates: at
+that point the store, not the item, is broken. Failures are the
+one outcome that never delta-skips: the next run retries them,
+because a re-harvest or an extractor fix may have removed the
+cause.
 """
 
 from collections.abc import Callable, Mapping
@@ -33,6 +40,7 @@ from school_index.doc_extract.extractors import (
     ExtractedText,
     ExtractionFailed,
     Extractor,
+    error_text,
     render_pages,
 )
 from school_index.doc_extract.store import ExtractStore
@@ -75,7 +83,10 @@ class ExtractionRunner:
             if self._already_current(item):
                 skipped += 1
                 continue
-            outcome, error = self._extract_one(item, at=at)
+            try:
+                outcome, error = self._extract_one(item, at=at)
+            except Exception as exc:  # containment: one item, never the run
+                outcome, error = self._record_unexpected(item, exc, at=at)
             match outcome:
                 case ExtractionOutcome.EXTRACTED:
                     extracted += 1
@@ -117,6 +128,28 @@ class ExtractionRunner:
         )
 
     # -- per-item work ---------------------------------------------------
+
+    def _record_unexpected(
+        self, item: CorpusItem, exc: Exception, *, at: str
+    ) -> tuple[ExtractionOutcome, str]:
+        """Fold an unexpected per-item exception into a FAILED record.
+
+        The strategy name is recorded when the item's format has one
+        (the failure happened in or around it). If this record write
+        raises, it propagates — the store itself is broken, and a
+        run that cannot record its failures must not pretend to
+        have run.
+        """
+        error = error_text(exc)
+        extractor = self._extractors.get(item.format)
+        self._record(
+            item,
+            outcome=ExtractionOutcome.FAILED,
+            extractor=extractor.name if extractor is not None else None,
+            error=error,
+            at=at,
+        )
+        return ExtractionOutcome.FAILED, error
 
     def _already_current(self, item: CorpusItem) -> bool:
         """True when a stored outcome already covers this blob revision."""

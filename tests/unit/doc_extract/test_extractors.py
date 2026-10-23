@@ -60,6 +60,15 @@ def test_render_pages_marks_every_page_boundary(
     assert render_pages(["only"]) == "[[page 1]]\nonly"
 
 
+def test_render_pages_replaces_lone_surrogates_with_replacement_char() -> None:
+    # Live-data regression (hal9k, 2026-10-23): pypdf decodes some
+    # Slides-export glyphs to lone surrogates, which UTF-8/SQLite
+    # cannot encode — the stored form must always be encodable.
+    rendered = render_pages(["glyph \udcff here"])
+    assert rendered == "[[page 1]]\nglyph \ufffd here"
+    rendered.encode("utf-8")  # must not raise
+
+
 def test_blank_pdf_is_extracted_but_empty(
     tmp_path: Path, make_pdf: Callable[[list[str]], bytes]
 ) -> None:
