@@ -10,17 +10,20 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-echo "==> [1/4] Unit tests"
+echo "==> [1/5] Unit tests"
 python -m pytest tests/unit
 
-echo "==> [2/4] Coverage gate (fail_under = 90, see pyproject.toml)"
+echo "==> [2/5] Coverage gate (fail_under = 90, see pyproject.toml)"
 python -m coverage run -m pytest tests/unit
 python -m coverage report
 
-echo "==> [3/4] Type check (mypy strict)"
+echo "==> [3/5] Type check (mypy strict)"
 python -m mypy src/school_index
 
-echo "==> [4/4] LOC cap (500 lines per file under src/)"
+echo "==> [4/5] LOC cap (500 lines per file under src/)"
 python scripts/check_loc.py src
+
+echo "==> [5/5] System tests (end-to-end; gate merges but do not count toward unit coverage)"
+python -m pytest tests/system
 
 echo "All gates passed."
