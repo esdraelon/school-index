@@ -67,8 +67,8 @@ class CorpusItem:
     from (also the resource URL in v1; the export/download URL actually
     fetched is a fetch-time detail, not provenance). ``content_hash``
     is the SHA-256 of the stored bytes, None for link-only and
-    never-downloaded items. ``fetched_at`` is the last fetch attempt
-    (success or failure), ISO-8601 UTC.
+    never-downloaded items. ``fetched_at`` is when a run last touched
+    the row (a fetch attempt, or the tombstone pass), ISO-8601 UTC.
     """
 
     id: str
