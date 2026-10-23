@@ -16,11 +16,13 @@ requires-python = ">=3.12"
 dependencies = []
 
 [project.optional-dependencies]
-# pytest-cov pulls in the coverage module that scripts/verify.sh drives
-# directly (same two-stage shape as the adapter's gates).
+# `coverage` is declared explicitly (not left to pytest-cov's transitive
+# pull): scripts/verify.sh drives the coverage CLI directly, so the tool
+# is a first-class dev dependency — the adapter declares it the same way.
 dev = [
     "pytest",
     "pytest-cov",
+    "coverage",
     "mypy",
 ]
 
