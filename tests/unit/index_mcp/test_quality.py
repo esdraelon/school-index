@@ -67,8 +67,21 @@ def test_passages_score_gate_beats_a_huge_margin() -> None:
 
 def test_passages_tie_between_genuine_items_is_weak_by_design() -> None:
     # The tutorials shape: two right answers tie at 0.676/0.676 —
-    # the margin arm reads no standout. Documented trade.
+    # no standout and no decisive score. Documented under-claim.
     hits = [_passage("a", 0.676, chunk_id=1), _passage("b", 0.676, chunk_id=2)]
+    assert assess_passages(hits) == "weak"
+
+
+def test_passages_high_tie_is_strong_via_the_decisive_arm() -> None:
+    # The slope-intercept shape: the KEY and its worksheet tie at
+    # 0.810/0.802 (margin 0.008) — at that height the tie is
+    # corroboration, not absence. Absent winners stay <= 0.701.
+    hits = [_passage("a", 0.810, chunk_id=1), _passage("b", 0.802, chunk_id=2)]
+    assert assess_passages(hits) == "strong"
+
+
+def test_passages_just_below_decisive_with_no_margin_is_weak() -> None:
+    hits = [_passage("a", 0.719, chunk_id=1), _passage("b", 0.711, chunk_id=2)]
     assert assess_passages(hits) == "weak"
 
 

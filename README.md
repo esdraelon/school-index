@@ -86,11 +86,13 @@ pointers.
 
 The calibration (`index_mcp/quality.py`) is derived from the M5
 benchmark's recorded distributions, not tuned by feel: passages
-need a top score ≥ 0.675 plus a ≥ 0.02 margin over the runner-up
-item; resources need a #1 best_score ≥ 0.67 plus breadth
-(≥ 5 candidate hits) or a decisive best (≥ 0.72). Validated on
-the labeled set: all 4 absent probes weak on both tools, scored
-tops strong 28/29 (resources) and 27/29 (passages). The constants
+need a top score ≥ 0.675 plus a standout (a ≥ 0.02 margin over
+the runner-up item, or a decisive top ≥ 0.72); resources need a
+#1 best_score ≥ 0.67 plus breadth (≥ 5 candidate hits) or a
+decisive best (≥ 0.72). Validated on the labeled set (live
+service and stored records agree exactly): all 4 absent probes
+weak on both tools, scored tops strong 28/29 (resources) and
+27/29 (passages). The constants
 sit in one 33-query run's observed gaps on bge-small's cosine
 scale — re-derive them when the corpus or the model changes (see
 the contract doc's limits section).

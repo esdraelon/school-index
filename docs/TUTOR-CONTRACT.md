@@ -84,9 +84,10 @@ benchmarked (open calibration item).
 Computed at runtime by `index_mcp.quality` (pure functions over
 the returned window) from signals the response itself carries:
 
-- **Passages:** strong iff top score ≥ 0.675 AND the top item's
-  best chunk beats every other item's best in the window by
-  ≥ 0.02 (no rival item in the window ⇒ margin satisfied).
+- **Passages:** strong iff top score ≥ 0.675 AND the top stands
+  out — the top item's best chunk beats every other item's best
+  in the window by ≥ 0.02 (no rival item in the window ⇒ margin
+  satisfied), OR the top score is itself decisive (≥ 0.72).
 - **Resources:** strong iff #1 `best_score` ≥ 0.67 AND (#1
   `chunk_hits` ≥ 5 OR #1 `best_score` ≥ 0.72).
 
@@ -96,10 +97,14 @@ chunks): the absent probes' tops overlap genuine weak hits on raw
 score alone (+0.10 separation), but absent winners never stand
 clear of the field on margin, and the one spurious resources
 winner above the score gate (0.689) held only 4 candidate hits.
-Validated at M6 on the same set: all 4 absent probes "weak" on
-both tools; scored tops "strong" 28/29 (resources) and 27/29
-(passages) — the passage exceptions are ties between two
-genuinely relevant items, an accepted under-claim.
+Validated at M6 on the same set (live service and records agree
+exactly): all 4 absent probes "weak" on both tools; scored tops
+"strong" 28/29 (resources) and 27/29 (passages). The passage
+exceptions are flat-field ties at modest scores (the
+early-democracy and tutorials queries) — accepted under-claims;
+genuine ties at high scores (the slope-intercept pair at
+0.81/0.80) are rescued by the decisive arm, which no absent
+winner reaches (their maximum top is 0.701).
 
 **Limits:** the constants sit in the observed gaps of ONE
 33-query run on ONE embedder (bge-small-en-v1.5). They are corpus-

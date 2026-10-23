@@ -8,12 +8,14 @@ SET, never of a single hit: it answers the tutor's actual
 question — "may I point Sam at this, or must I say I don't have
 material on that?"
 
-The rule (two arms per tool, both must hold for "strong"):
+The rule (a score gate plus a standout arm, per tool):
 
-- Passages: top chunk score >= 0.675 AND the top item's best chunk
-  beats the best chunk of every OTHER item in the window by
-  >= 0.02 (margin). A window holding a single item has no
-  competitor, so the margin arm is satisfied by construction.
+- Passages: top chunk score >= 0.675 AND the top stands out —
+  either the top item's best chunk beats the best chunk of every
+  OTHER item in the window by >= 0.02 (margin), or the top score
+  itself is decisive (>= 0.72). A window holding a single item
+  has no competitor, so the margin arm is satisfied by
+  construction.
 - Resources: the top item's best_score >= 0.67 AND (its
   chunk_hits >= 5 OR its best_score >= 0.72). An empty result set
   is always "weak".
@@ -36,15 +38,22 @@ labeled set v1.0: 29 scored queries + 4 absent-topic probes over
   passages need the margin arm and a bare threshold cannot work —
   0.701 (absent) overlaps 0.676–0.690 (genuine).
 
-Validation on the same set (M6): all 4 absent probes "weak" on
-both tools; scored tops "strong" 28/29 resources (only the
-science-units query is weak — its #1 is genuinely the wrong item)
-and 27/29 passages. The two passage exceptions are ties between
-two genuinely relevant items (the slope-intercept KEY vs its
-worksheet; the two tutorial schedules): a margin rule reads a tie
-as no-standout. The calibration accepts that trade deliberately —
-under-claiming costs a clarifying exchange, over-claiming sends
-Sam to the Team Weekly Agenda for a topic the corpus doesn't have.
+Validation on the same set (M6, live service + records agree
+exactly): all 4 absent probes "weak" on both tools; scored tops
+"strong" 28/29 resources (only the science-units query is weak —
+its #1 is genuinely the wrong item) and 27/29 passages. The
+passages rule earned its decisive arm the hard way: margin alone
+scored 24/29, because genuine ties are common in this corpus —
+two slope-intercept items tie at 0.81/0.80, two ELA items at
+0.727/0.724. The chunk windows showed those ties sit at HIGH top
+scores while every absent winner stays <= 0.701, so a top score
+>= 0.72 is decisive on its own. The two remaining passage
+exceptions are flat-field ties (the DBQ/early-democracy query,
+the two identical tutorial schedules at 0.676): no standout at a
+modest score. The calibration accepts under-claiming there
+deliberately — it costs a clarifying exchange, while
+over-claiming sends Sam to the Team Weekly Agenda for a topic the
+corpus doesn't have.
 
 Limits (read before reusing these constants): they sit in the
 OBSERVED GAPS of one 33-query run on one embedder's cosine scale.
@@ -70,6 +79,7 @@ WEAK: MatchQuality = "weak"
 # Passages arms (derivation in the module docstring).
 _PASSAGE_MIN_TOP = 0.675
 _PASSAGE_MIN_MARGIN = 0.02
+_PASSAGE_HIGH_TOP = 0.72
 
 # Resources arms (derivation in the module docstring).
 _RESOURCE_MIN_BEST = 0.67
@@ -89,6 +99,8 @@ def assess_passages(hits: Sequence[Passage]) -> MatchQuality:
         current = best_by_item.get(hit.item_id)
         if current is None or hit.score > current:
             best_by_item[hit.item_id] = hit.score
+    if top.score >= _PASSAGE_HIGH_TOP:
+        return STRONG
     rivals = [
         score for item_id, score in best_by_item.items() if item_id != top.item_id
     ]
