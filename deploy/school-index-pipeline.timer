@@ -1,0 +1,15 @@
+# School Index — pipeline cadence (M4 deploy artifact).
+# Every 6 hours at :45 (00:45, 06:45, 12:45, 18:45 local) — half an
+# hour after the school adapter's scrape (:15), so a pipeline pass
+# always harvests the adapter's freshest resources instead of racing
+# its scrape.
+[Unit]
+Description=Run the school-index pipeline every six hours
+
+[Timer]
+OnCalendar=*-*-* 00,06,12,18:45:00
+Persistent=true
+Unit=school-index-pipeline.service
+
+[Install]
+WantedBy=timers.target

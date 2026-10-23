@@ -1,0 +1,36 @@
+# School Index MCP — nginx SNIPPET (M4 deploy artifact; mirrors the
+# school MCP's gateway shape exactly).
+# Merge into the haliffer.ululuth.com server block in
+# /etc/nginx/sites-enabled/haliffer.ululuth.com.conf at deploy time,
+# then: nginx -t && systemctl reload nginx.
+#
+# Auth — ONE token, checked twice:
+#   - nginx `auth_request /_auth` validates the presented Bearer
+#     against the gateway registry (/var/www/haliffer/auth/
+#     tokens.json) AND scopes it to the path. The index token is
+#     registered there as client "index-mcp" with paths exactly
+#     ["/mcp/index"] — it opens nothing else on the gateway, and
+#     the school token opens only its own route in return.
+#   - The app additionally enforces the same token itself
+#     (INDEX_MCP_TOKEN), so the container stays gated even if it is
+#     reached directly on localhost.
+#   Clients present just: Authorization: Bearer <INDEX_MCP_TOKEN>.
+#
+# Path — the app serves its MCP at its root (streamable_http_path
+# "/"), so the URI part "/" strips the /mcp/index/ prefix, exactly
+# like the sibling MCP blocks. X-Forwarded-Proto is pinned to https
+# (this vhost IS the TLS terminator), and the app runs uvicorn with
+# proxy-header trust (see index_mcp/cli.py). Host $http_host
+# preserves the port, per the sibling blocks' DNS-rebinding note.
+location /mcp/index/ {
+    auth_request /_auth;
+    proxy_pass http://127.0.0.1:8766/;
+    proxy_http_version 1.1;
+    proxy_set_header Host $http_host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_set_header Authorization $http_authorization;
+    proxy_buffering off;
+    proxy_read_timeout 300s;
+}

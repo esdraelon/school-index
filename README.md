@@ -55,17 +55,34 @@ pip install -e '.[dev]'
 ./scripts/verify.sh   # unit tests, coverage >=90, mypy strict, 500-LOC cap
 ```
 
-Status: **M3** — `corpus_sync` (M1), `doc_extract` (M2), and
-`embed_index` (M3) landed. The harvester pulls Sam's resources
-through the adapter's MCP contract into the corpus store (SQLite
-metadata + original files on disk), with per-item failure records,
-tombstones, and idempotent re-runs; the extractor then turns
-harvested files into text — stored in `item_text` with
-`[[page N]]` page-boundary markers — under a per-item outcome
-record; the embedder chunks that text on page structure and embeds
-it with BAAI/bge-small-en-v1.5 on ONNX, delta-only, under a
-per-item `embed_state` record. Milestones M4–M6 per
-`docs/PROJECT-INDEX.md` in school-assistant.
+Status: **M4** — `corpus_sync` (M1), `doc_extract` (M2),
+`embed_index` (M3), and `index_mcp` (M4) landed. The harvester
+pulls Sam's resources through the adapter's MCP contract into the
+corpus store (SQLite metadata + original files on disk), with
+per-item failure records, tombstones, and idempotent re-runs; the
+extractor then turns harvested files into text — stored in
+`item_text` with `[[page N]]` page-boundary markers — under a
+per-item outcome record; the embedder chunks that text on page
+structure and embeds it with BAAI/bge-small-en-v1.5 on ONNX,
+delta-only, under a per-item `embed_state` record; the search MCP
+then serves the index read-only (`search_passages`,
+`resources_for_topic`, `worked_examples`) through the gateway at
+`/mcp/index/`, and a systemd timer keeps the pipeline fresh
+(sync → extract → embed every 6h at :45). See `deploy/README.md`.
+Milestones M5–M6 per `docs/PROJECT-INDEX.md` in school-assistant.
+
+## Serving (M4): one database, WAL, readers beside writers
+
+The corpus DB is shared by the host pipeline (writer, user
+haliffer) and the index MCP container (reader, uid 10001). The
+reconciliation is **WAL mode**: the stage stores' file factories
+set `journal_mode=WAL` (+ `busy_timeout`), so the server's reads
+never block the pipeline's writes or vice versa. The container's
+data mount is read-write *for the WAL sidecars*; the server's
+read-only guarantee lives in its code — `index_mcp`'s store issues
+SELECTs only (no migrate, no schema creation) and a system test
+proves serving moves no rows. Write access for uid 10001 is a
+POSIX ACL on the data dir; ownership stays with haliffer.
 
 ## Vector store (M3): sqlite-vec, with a tested fallback
 

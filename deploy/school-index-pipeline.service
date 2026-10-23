@@ -1,0 +1,21 @@
+# School Index — one full pipeline pass (M4 deploy artifact).
+# Install with school-index-pipeline.timer under /etc/systemd/system/
+# on hal9k. The chain runs on the host (the clone's venv) because the
+# pipeline stages are host processes by design — the container only
+# serves reads. The sync stage consumes the school MCP through the
+# public gateway, so it depends on docker (the school container)
+# being up.
+[Unit]
+Description=School Index pipeline pass (sync -> extract -> embed)
+Requires=docker.service
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+User=haliffer
+WorkingDirectory=/home/haliffer/school-index
+Environment=CORPUS_ROOT=/home/haliffer/school-index-data
+ExecStart=/home/haliffer/school-index/.venv/bin/python /home/haliffer/school-index/deploy/run_pipeline.py
+
+[Install]
+WantedBy=multi-user.target

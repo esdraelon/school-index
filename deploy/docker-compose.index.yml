@@ -1,0 +1,35 @@
+# School Index MCP on hal9k — M4 deploy artifact (files only; the
+# deploy itself is a separate human-checked step, see README.md).
+#
+# Placement (on hal9k): inside the repo clone at ~/school-index, a
+# deploy-run/ directory holding this file and a .env with
+# INDEX_MCP_TOKEN set. The build context is the repo checkout.
+#
+# Data: the corpus root is the HOST's ~/school-index-data — the same
+# directory the pipeline stages (host venv, user haliffer) write.
+# The mount is read-write, deliberately: the DB is WAL-mode and a
+# WAL reader needs the -wal/-shm sidecars; the server's read-only
+# guarantee is in its code (SELECT-only store, proven by test), not
+# in the mount. Write access for the container user (uid 10001) is
+# granted by POSIX ACLs on the data dir — ownership stays with
+# haliffer, whose pipeline keeps writing it. See README.md.
+# The models subtree is additionally mounted read-only over itself:
+# the server embeds queries but never fetches models.
+services:
+  index-mcp:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: haliffer-index-mcp
+    container_name: haliffer-index-mcp
+    restart: unless-stopped
+    environment:
+      CORPUS_ROOT: /data
+      INDEX_MCP_TOKEN:
+    ports:
+      # Localhost only — the haliffer.ululuth.com gateway nginx is
+      # the public surface (see nginx-index.conf.snippet).
+      - "127.0.0.1:8766:8766"
+    volumes:
+      - /home/haliffer/school-index-data:/data
+      - /home/haliffer/school-index-data/models:/data/models:ro
