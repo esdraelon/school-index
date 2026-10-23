@@ -201,6 +201,25 @@ def test_bedrock_arm_builds_a_throwaway_with_production_chunks(
     assert arm.service.search_passages("slope", limit=2)
 
 
+def test_provider_failing_mid_build_blocks_the_arm(tmp_path: Path) -> None:
+    """A provider that probes fine but fails on documents (throttling,
+    a revoked key) yields a blocked arm, not a crashed benchmark."""
+
+    class ProbeOnlyProvider(FakeProvider):
+        def embed_documents(self, texts):  # type: ignore[override]
+            raise RuntimeError("ThrottlingException: rate exceeded")
+
+    prod = tmp_path / "prod"
+    _build_prod_corpus(prod, FakeProvider())
+    with pytest.raises(ArmBlocked, match="ThrottlingException"):
+        build_arm(
+            ARM_SPECS["bedrock-titan"],
+            config=_config(tmp_path, prod),
+            providers={"bedrock-titan": ProbeOnlyProvider()},
+            now=lambda: "2026-10-23T00:00:00Z",
+        )
+
+
 def test_chunk600_arm_rechunks_from_text(tmp_path: Path) -> None:
     provider = FakeProvider()
     prod = tmp_path / "prod"

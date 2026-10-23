@@ -205,7 +205,13 @@ def _build_throwaway(
         if item.status != "ok":
             continue
         chunks = _arm_chunks(spec, corpus_root=config.corpus_root, item=item)
-        vectors = provider.embed_documents([chunk.text for chunk in chunks])
+        try:
+            vectors = provider.embed_documents([chunk.text for chunk in chunks])
+        except Exception as exc:
+            # A provider that probes fine can still fail mid-build
+            # (throttling, a revoked key): that is a blocked arm,
+            # recorded verbatim — not a crashed benchmark.
+            raise ArmBlocked(reason=f"{type(exc).__name__}: {exc}"[:400]) from exc
         store.replace_item_chunks(
             chunks=chunks,
             vectors=vectors,
