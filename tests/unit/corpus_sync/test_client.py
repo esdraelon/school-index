@@ -25,9 +25,11 @@ from school_index.corpus_sync.client import (
     parse_resources,
 )
 
-# Modeled on the dispatcher's 2026-10-23 live probe of the adapter:
-# envelope {"result": [...]}, nested student/course, blank titles and
-# null courses both occur in the real corpus.
+# Modeled on the live adapter data (dispatcher probe 2026-10-23,
+# reconciled at the first harvest): envelope {"result": [...]},
+# nested student/course, blank titles, null courses — and, the
+# harvest's lesson, `student: null` on shared (team-site) material:
+# 114 of the 200 real items carry it.
 FIXTURE_ITEMS: list[dict[str, Any]] = [
     {
         "student": {"id": "sam", "display_name": "Sam"},
@@ -56,12 +58,21 @@ FIXTURE_ITEMS: list[dict[str, Any]] = [
         "source_kind": "TEAM_SITE",
         "scraped_at": "2026-10-23T05:15:00+00:00",
     },
+    {
+        "student": None,  # shared team-site material (real shape)
+        "course": {"name": "8th Grade Team", "period": None, "teacher": None},
+        "title": "Team announcements",
+        "kind": "NOTES",
+        "url": "https://sites.google.com/leanderisd.org/8th-grade-team-site/home",
+        "source_kind": "TEAM_SITE",
+        "scraped_at": "2026-10-23T05:15:00+00:00",
+    },
 ]
 
 
 def test_parse_envelope_payload() -> None:
-    resources = parse_resources({"result": FIXTURE_ITEMS})
-    assert len(resources) == 3
+    resources = parse_resources({"result": FIXTURE_ITEMS}, default_student="sam")
+    assert len(resources) == 4
     first = resources[0]
     assert first.student_id == "sam"
     assert first.course_name == "Algebra I"
@@ -70,11 +81,19 @@ def test_parse_envelope_payload() -> None:
 
 
 def test_parse_bare_list_payload() -> None:
-    assert len(parse_resources(FIXTURE_ITEMS)) == 3
+    assert len(parse_resources(FIXTURE_ITEMS, default_student="sam")) == 4
+
+
+def test_parse_null_student_attributes_to_queried_student() -> None:
+    resources = parse_resources({"result": FIXTURE_ITEMS}, default_student="sam")
+    shared = resources[3]
+    assert shared.student_id == "sam"
+    assert shared.source_ref == f"sam:{shared.url}"
+    assert shared.course_name == "8th Grade Team"
 
 
 def test_parse_blank_title_and_null_course() -> None:
-    resources = parse_resources({"result": FIXTURE_ITEMS})
+    resources = parse_resources({"result": FIXTURE_ITEMS}, default_student="sam")
     second = resources[1]
     assert second.title == ""  # whitespace-only titles normalize to ""
     assert second.course_name is None
@@ -82,32 +101,32 @@ def test_parse_blank_title_and_null_course() -> None:
 
 def test_parse_rejects_payload_without_a_list() -> None:
     with pytest.raises(PayloadError):
-        parse_resources({"result": 42})
+        parse_resources({"result": 42}, default_student="sam")
     with pytest.raises(PayloadError):
-        parse_resources("not a payload")
+        parse_resources("not a payload", default_student="sam")
 
 
 def test_parse_rejects_non_object_item() -> None:
     with pytest.raises(PayloadError, match="expected an object"):
-        parse_resources({"result": [42]})
+        parse_resources({"result": [42]}, default_student="sam")
 
 
 def test_parse_rejects_non_object_student() -> None:
     bad = [{"student": "sam", "url": "https://example.com"}]
     with pytest.raises(PayloadError, match="student"):
-        parse_resources(bad)
+        parse_resources(bad, default_student="sam")
 
 
 def test_parse_rejects_item_without_url() -> None:
     bad = [{"student": {"id": "sam"}, "title": "x"}]
     with pytest.raises(PayloadError, match="url"):
-        parse_resources(bad)
+        parse_resources(bad, default_student="sam")
 
 
 def test_parse_rejects_item_without_student_id() -> None:
     bad = [{"student": {"display_name": "Sam"}, "url": "https://example.com"}]
     with pytest.raises(PayloadError, match="id"):
-        parse_resources(bad)
+        parse_resources(bad, default_student="sam")
 
 
 def test_source_calls_get_resources_through_injected_transport() -> None:
@@ -120,7 +139,7 @@ def test_source_calls_get_resources_through_injected_transport() -> None:
     source = McpResourceSource(url="http://unused", token="t", transport=transport)
     resources = source.list_resources(student="sam")
     assert calls == [("get_resources", {"student": "sam"})]
-    assert len(resources) == 3
+    assert len(resources) == 4
 
 
 def test_unwrap_prefers_structured_content() -> None:
@@ -181,5 +200,5 @@ def fixture_mcp_url() -> Iterator[str]:
 def test_source_round_trips_through_real_mcp(fixture_mcp_url: str) -> None:
     source = McpResourceSource(url=fixture_mcp_url, token="fixture-token")
     resources = source.list_resources(student="sam")
-    assert [r.kind for r in resources] == ["DOCUMENT", "TUTORIAL", "TUTORIAL"]
+    assert [r.kind for r in resources] == ["DOCUMENT", "TUTORIAL", "TUTORIAL", "NOTES"]
     assert resources[2].course_name == "Science"

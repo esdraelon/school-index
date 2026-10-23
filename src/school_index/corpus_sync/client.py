@@ -14,6 +14,12 @@ substitution, and the translation logic is exercised for real. (The
 default transport is also covered, by a round-trip test against an
 in-process FastMCP server: see tests/unit/corpus_sync/test_client.py.)
 
+One shape the live data taught us (first harvest, 2026-10-23): a
+resource's ``student`` may be **null** — shared material (the team
+site's, mostly) that the adapter reports inside every student's
+result set. Those items are attributed to the *queried* student:
+the request's scope is their scope.
+
 A payload that breaks the contract raises ``PayloadError``: that is
 a systemic failure (the harvest cannot know what the world looks
 like), unlike a per-item download failure, which is data.
@@ -59,21 +65,27 @@ def _optional_text(item: Mapping[str, Any], key: str) -> str:
     return value if isinstance(value, str) else ""
 
 
-def _parse_resource(item: object, *, index: int) -> ResourceRef:
+def _parse_resource(item: object, *, index: int, default_student: str) -> ResourceRef:
     where = f"resource[{index}]"
     if not isinstance(item, Mapping):
         raise PayloadError(f"{where}: expected an object, got {type(item).__name__}")
     student = item.get("student")
-    if not isinstance(student, Mapping):
-        raise PayloadError(f"{where}: 'student' is missing or not an object")
+    if student is None:
+        # Shared material (see module docstring): the query's student.
+        student_id, student_name = default_student, ""
+    elif isinstance(student, Mapping):
+        student_id = _require_text(student, "id", where=f"{where}.student")
+        student_name = _optional_text(student, "display_name")
+    else:
+        raise PayloadError(f"{where}: 'student' is neither an object nor null")
     course = item.get("course")
     course_name: str | None = None
     if isinstance(course, Mapping):
         name = course.get("name")
         course_name = name if isinstance(name, str) else None
     return ResourceRef(
-        student_id=_require_text(student, "id", where=f"{where}.student"),
-        student_name=_optional_text(student, "display_name"),
+        student_id=student_id,
+        student_name=student_name,
         course_name=course_name,
         title=_optional_text(item, "title").strip(),
         kind=_optional_text(item, "kind"),
@@ -83,19 +95,23 @@ def _parse_resource(item: object, *, index: int) -> ResourceRef:
     )
 
 
-def parse_resources(payload: object) -> list[ResourceRef]:
+def parse_resources(payload: object, *, default_student: str) -> list[ResourceRef]:
     """Translate a decoded get_resources payload into ResourceRefs.
 
     Accepts the probed envelope (``{"result": [...]}``) or a bare
     list — FastMCP produces the former for list-returning tools, and
-    tolerating both costs nothing at the boundary.
+    tolerating both costs nothing at the boundary. ``default_student``
+    attributes resources whose ``student`` is null (shared material).
     """
     items: object = payload.get("result") if isinstance(payload, Mapping) else payload
     if not isinstance(items, list):
         raise PayloadError(
             f"get_resources payload has no resource list (got {type(items).__name__})"
         )
-    return [_parse_resource(item, index=i) for i, item in enumerate(items)]
+    return [
+        _parse_resource(item, index=i, default_student=default_student)
+        for i, item in enumerate(items)
+    ]
 
 
 def _httpx_client_factory(
@@ -179,4 +195,4 @@ class McpResourceSource:
 
     def list_resources(self, *, student: str) -> list[ResourceRef]:
         payload = self._transport("get_resources", {"student": student})
-        return parse_resources(payload)
+        return parse_resources(payload, default_student=student)
