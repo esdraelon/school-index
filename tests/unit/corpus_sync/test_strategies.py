@@ -15,6 +15,7 @@ from school_index.corpus_sync.fetch import (
     RawResponse,
 )
 from school_index.corpus_sync.strategies import (
+    SIGNIN_ERROR,
     Downloaded,
     DownloadFailed,
     DriveFileDownloadStrategy,
@@ -85,6 +86,32 @@ def test_google_docs_rejects_non_exportable_shapes() -> None:
     assert not strategy.matches(url="https://example.com/document/d/AbC123/edit")
 
 
+SIGNIN_PAGE = (
+    b'<!doctype html><html><head><base href="https://accounts.google.com/'
+    b'v3/signin/"><title>Sign in</title></head><body>...</body></html>'
+)
+
+
+def test_google_docs_signin_page_is_a_failure_not_content() -> None:
+    strategy = GoogleDocsExportStrategy()
+    url = "https://docs.google.com/presentation/d/walled1/pub"
+    export_url = "https://docs.google.com/presentation/d/walled1/export?format=pdf"
+    downloader = FakeDownloader(
+        {export_url: ok_response(SIGNIN_PAGE, **{"Content-Type": "text/html"})}
+    )
+    outcome = strategy.fetch(resource=make_resource(url), downloader=downloader)
+    assert outcome == DownloadFailed(error=SIGNIN_ERROR)
+
+
+def test_google_docs_non_pdf_export_is_a_failure() -> None:
+    strategy = GoogleDocsExportStrategy()
+    url = "https://docs.google.com/document/d/odd1/edit"
+    export_url = "https://docs.google.com/document/d/odd1/export?format=pdf"
+    downloader = FakeDownloader({export_url: ok_response(b"plain text, no pdf")})
+    outcome = strategy.fetch(resource=make_resource(url), downloader=downloader)
+    assert outcome == DownloadFailed(error="export returned non-PDF content")
+
+
 def test_google_docs_http_failure_is_an_outcome() -> None:
     strategy = GoogleDocsExportStrategy()
     url = "https://docs.google.com/presentation/d/AbC123/pub"
@@ -145,6 +172,29 @@ def test_drive_format_defaults_to_bin() -> None:
     )
     outcome = strategy.fetch(resource=make_resource(url), downloader=downloader)
     assert outcome == Downloaded(content=b"data", format="bin")
+
+
+def test_drive_signin_page_is_a_failure_not_content() -> None:
+    strategy = DriveFileDownloadStrategy()
+    url = "https://drive.google.com/file/d/private1/view"
+    download_url = "https://drive.google.com/uc?export=download&id=private1"
+    downloader = FakeDownloader(
+        {download_url: ok_response(SIGNIN_PAGE, **{"Content-Type": "text/html"})}
+    )
+    outcome = strategy.fetch(resource=make_resource(url), downloader=downloader)
+    assert outcome == DownloadFailed(error=SIGNIN_ERROR)
+
+
+def test_drive_genuine_html_file_still_downloads() -> None:
+    strategy = DriveFileDownloadStrategy()
+    url = "https://drive.google.com/file/d/page1/view"
+    download_url = "https://drive.google.com/uc?export=download&id=page1"
+    page = b"<html><head><title>Saved page</title></head><body>hi</body></html>"
+    downloader = FakeDownloader(
+        {download_url: ok_response(page, **{"Content-Type": "text/html"})}
+    )
+    outcome = strategy.fetch(resource=make_resource(url), downloader=downloader)
+    assert outcome == Downloaded(content=page, format="html")
 
 
 def test_drive_rejects_non_file_shapes() -> None:

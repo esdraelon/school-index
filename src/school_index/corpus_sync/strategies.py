@@ -26,6 +26,23 @@ from school_index.corpus_sync.fetch import Downloader, FetchError, RawResponse
 #: Stored format for pointer-only items (nothing was downloaded).
 EXTERNAL_LINK_FORMAT = "external-link"
 
+#: Failure recorded when a download lands on Google's sign-in page:
+#: the file is not public, and the page's bytes are per-request (they
+#: would never hash-match on re-runs, and they are not the resource).
+SIGNIN_ERROR = "google sign-in page (file not publicly accessible)"
+
+
+def _is_signin_bytes(content: bytes) -> bool:
+    """True when bytes are Google's sign-in page, not a document.
+
+    Unauthenticated requests for non-public Google files redirect to
+    accounts.google.com; httpx follows and lands on a 200 HTML page.
+    The marker is the sign-in flow's own base URL, present in the
+    first bytes of every such page (seen live, 2026-10-23: 28 Drive
+    items were silently storing this page as their "content").
+    """
+    return b"accounts.google.com" in content[:4096]
+
 
 @dataclass(frozen=True, kw_only=True)
 class Downloaded:
@@ -130,11 +147,20 @@ class GoogleDocsExportStrategy:
         export_url = (
             f"https://docs.google.com/{app}/d/{doc_id}/export?format={export_format}"
         )
-        return _get(
+        outcome = _get(
             downloader=downloader,
             url=export_url,
             format_for=lambda _response: export_format,
         )
+        if isinstance(outcome, Downloaded) and not outcome.content.startswith(
+            b"%PDF"
+        ):
+            # A 200 that is not a PDF is not the deck: for a non-public
+            # file it is the sign-in page (see _is_signin_bytes).
+            if _is_signin_bytes(outcome.content):
+                return DownloadFailed(error=SIGNIN_ERROR)
+            return DownloadFailed(error="export returned non-PDF content")
+        return outcome
 
 
 class DriveFileDownloadStrategy:
@@ -181,9 +207,15 @@ class DriveFileDownloadStrategy:
         if file_id is None:  # unreachable via the chain; defensive
             return DownloadFailed(error=f"not a drive file URL: {resource.url}")
         download_url = f"https://drive.google.com/uc?export=download&id={file_id}"
-        return _get(
+        outcome = _get(
             downloader=downloader, url=download_url, format_for=self._format_for
         )
+        if isinstance(outcome, Downloaded) and _is_signin_bytes(outcome.content):
+            # Non-public file: Drive redirected to the sign-in page.
+            # Genuine HTML files stored in Drive do not carry the
+            # sign-in marker and still land as format "html".
+            return DownloadFailed(error=SIGNIN_ERROR)
+        return outcome
 
     def _format_for(self, response: RawResponse) -> str:
         by_type = self._CONTENT_TYPE_FORMATS.get(response.content_type)
