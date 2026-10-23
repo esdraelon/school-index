@@ -89,7 +89,8 @@ def test_google_docs_http_failure_is_an_outcome() -> None:
     strategy = GoogleDocsExportStrategy()
     url = "https://docs.google.com/presentation/d/AbC123/pub"
     export_url = "https://docs.google.com/presentation/d/AbC123/export?format=pdf"
-    downloader = FakeDownloader({export_url: RawResponse(403, {}, b"")})
+    forbidden = RawResponse(status_code=403, headers={}, content=b"")
+    downloader = FakeDownloader({export_url: forbidden})
     outcome = strategy.fetch(resource=make_resource(url), downloader=downloader)
     assert outcome == DownloadFailed(error="HTTP 403")
 
