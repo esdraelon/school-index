@@ -13,19 +13,32 @@ Course filtering is post-filter at the vector layer (KNN has no
 WHERE clause), so passage searches oversample when a course is
 given, then trim — at corpus scale the oversample is free.
 
-``resources_for_topic`` ranking (the documented aggregate): an
-item's standing is its best chunk's score plus a breadth bonus —
-+0.02 per additional hit chunk, capped at +0.20 — so an item with
-several relevant passages outranks a one-chunk match at equal best
-score, while no amount of breadth overcomes a >0.2 relevance gap.
+``resources_for_topic`` ranking (the documented aggregate): items
+are ordered FIRST by the band of their best chunk's score — bands
+are ``_BAND_WIDTH`` (0.04) of cosine wide — and only inside a band
+by ``rank_score`` = best score + a breadth bonus (+0.02 per
+additional hit chunk, capped at +0.20). The band is the dominance
+guarantee: no amount of breadth lifts an item over one whose best
+chunk is a full band nearer, while near-ties (best scores within
+one band) still reward the item that matches in several places.
+M5's benchmark showed why: a 63-chunk omnibus at best 0.752 plus
+the full +0.20 breadth bonus outranked the colonial-trade deck
+whose best chunk (0.800) was the query's nearest passage — breadth
+was compensating for a 0.048 relevance gap. Under banding that
+deck wins outright (band 20 vs 18); re-running the full benchmark
+set (M6) put resources hit@3 at 1.00 with the deck at rank 1.
 Ties break on best score, then item id, so results are stable.
 """
+
+import math
 
 from school_index.embed_index.providers import EmbeddingProvider
 from school_index.index_mcp.domain import Passage, TopicResource
 from school_index.index_mcp.store import IndexReadStore
 
 MAX_LIMIT = 50
+_BAND_WIDTH = 0.04
+_BAND_EPSILON = 1e-9
 _BREADTH_WEIGHT = 0.02
 _BREADTH_CAP = 10
 _COURSE_OVERSAMPLE = 8
@@ -45,6 +58,15 @@ def _check_limit(limit: int) -> int:
     if limit < 1:
         raise ValueError(f"limit must be >= 1, got {limit}")
     return min(limit, MAX_LIMIT)
+
+
+def _band(score: float) -> int:
+    """The dominance band of a best-chunk score (see module docstring).
+
+    The epsilon keeps exact band edges (0.80 at width 0.04) in the
+    upper band despite binary float dust in the division.
+    """
+    return math.floor(score / _BAND_WIDTH + _BAND_EPSILON)
 
 
 class SearchService:
@@ -108,7 +130,14 @@ class SearchService:
             )
             for item_id, hit in best.items()
         ]
-        resources.sort(key=lambda r: (-r.rank_score, -r.best_score, r.item_id))
+        resources.sort(
+            key=lambda r: (
+                -_band(r.best_score),
+                -r.rank_score,
+                -r.best_score,
+                r.item_id,
+            )
+        )
         return resources[:limit]
 
     def worked_examples(self, topic: str, *, limit: int = 5) -> list[Passage]:

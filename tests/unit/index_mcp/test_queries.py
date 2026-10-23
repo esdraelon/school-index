@@ -3,8 +3,11 @@
 Geometry (query vector (1, 0), score = vector x): deck-a best 1.0
 with 2 hits (rank 1.02); ws-c best 0.9 with 3 hits (rank 0.94);
 sci-b best 0.0 with 1 hit (rank 0.0). A breadth-flip pair — dee
-best 0.95/1 hit (0.95) vs eee best 0.94/4 hits (1.00) — proves the
-breadth bonus can reorder but only within its 0.2 cap.
+best 0.95/1 hit (0.95) vs eee best 0.94/4 hits (1.00) — sits in
+ONE band (both 0.92–0.96), so breadth still decides it. The
+band-dominance pair — narrow best 0.80/1 hit vs wide best 0.75/6
+hits (rank 0.85) — spans bands 20 vs 18, so the better best chunk
+wins outright (the M6 fix for the M5 colonial-trade miss).
 """
 
 from pathlib import Path
@@ -83,11 +86,78 @@ def test_resources_for_topic_aggregates_best_and_breadth(tmp_path: Path) -> None
     assert by_title["Pythagorean Deck"].deep_link == "https://example.com/deck-a"
 
 
-def test_breadth_bonus_reorders_within_its_cap(tmp_path: Path) -> None:
+NARROW = SeedItem(
+    url="https://example.com/narrow",
+    title="Narrow Deck",
+    course="Social Studies",
+    chunks=(SeedChunk(text="Narrow single.", heading=None, vector=(0.80, 0.6)),),
+)
+WIDE = SeedItem(
+    url="https://example.com/wide",
+    title="Wide Omnibus",
+    course="Social Studies",
+    chunks=tuple(
+        SeedChunk(text=f"Wide {n}.", heading=None, vector=(x, y))
+        for n, (x, y) in enumerate(
+            [
+                (0.75, 0.6614),
+                (0.74, 0.6726),
+                (0.73, 0.6834),
+                (0.72, 0.6939),
+                (0.71, 0.7042),
+                (0.70, 0.7141),
+            ]
+        )
+    ),
+)
+
+
+def test_breadth_bonus_reorders_within_a_band(tmp_path: Path) -> None:
     provider = StubProvider()
     build_index(tmp_path, [DEE, EEE])
     resources = _service(tmp_path, provider).resources_for_topic("topic")
     assert [r.title for r in resources] == ["Eee Deck", "Dee Deck"]
+
+
+def test_best_chunk_band_dominates_breadth(tmp_path: Path) -> None:
+    provider = StubProvider()
+    build_index(tmp_path, [NARROW, WIDE])
+    resources = _service(tmp_path, provider).resources_for_topic("topic")
+    # Wide's rank_score (0.85) beats Narrow's (0.80) on the old
+    # aggregate; banding puts the 0.80 best two bands up, and no
+    # breadth crosses a band boundary.
+    assert [r.title for r in resources] == ["Narrow Deck", "Wide Omnibus"]
+    assert resources[0].best_score == pytest.approx(0.80, abs=1e-3)
+    assert resources[1].rank_score == pytest.approx(0.85, abs=1e-3)
+
+
+EDGE = SeedItem(
+    url="https://example.com/edge",
+    title="Edge Deck",
+    course="Math 8",
+    chunks=(SeedChunk(text="Edge single.", heading=None, vector=(0.60, 0.8)),),
+)
+NEAR = SeedItem(
+    url="https://example.com/near",
+    title="Near Deck",
+    course="Math 8",
+    chunks=(
+        SeedChunk(text="Near one.", heading=None, vector=(0.59, 0.8071)),
+        SeedChunk(text="Near two.", heading=None, vector=(0.58, 0.8146)),
+        SeedChunk(text="Near three.", heading=None, vector=(0.57, 0.8216)),
+    ),
+)
+
+
+def test_band_edge_lands_in_the_upper_band(tmp_path: Path) -> None:
+    provider = StubProvider()
+    build_index(tmp_path, [EDGE, NEAR])
+    # EDGE's best is exactly 0.60, a band edge at width 0.04 — but
+    # 0.60/0.04 is 14.999... in float. The band epsilon must put it
+    # in band 15, above NEAR (0.59, band 14), whose rank_score
+    # (0.63) would otherwise win the shared band on breadth.
+    resources = _service(tmp_path, provider).resources_for_topic("topic")
+    assert [r.title for r in resources] == ["Edge Deck", "Near Deck"]
 
 
 def test_worked_examples_formulates_the_query(tmp_path: Path) -> None:
