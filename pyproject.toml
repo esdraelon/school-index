@@ -29,6 +29,10 @@ dev = [
     "pytest-cov",
     "coverage",
     "mypy",
+    # Test-only: serves the in-process FastMCP fixture in the client
+    # round-trip test. (M4 will need uvicorn as a runtime dep to serve
+    # index_mcp itself; it moves then.)
+    "uvicorn>=0.30",
 ]
 
 [tool.setuptools]

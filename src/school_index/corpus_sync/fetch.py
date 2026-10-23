@@ -65,13 +65,22 @@ class Downloader(Protocol):
 
 
 class HttpDownloader:
-    """Downloader over httpx. The client is injectable for tests."""
+    """Downloader over httpx. The client is injectable for tests.
+
+    The default client is built with ``trust_env=False``: env proxy
+    variables belong to whatever runtime hosts the process (one agent
+    VM's egress proxy made a default httpx client unconstructable —
+    its bracketed-IPv6 no_proxy entries break httpx's parser), while
+    this tool's targets are public school links and estate hosts
+    with direct egress. Behavior must not depend on the host shell.
+    """
 
     def __init__(self, *, client: httpx.Client | None = None) -> None:
         self._client = client or httpx.Client(
             follow_redirects=True,
             timeout=DOWNLOAD_TIMEOUT,
             headers={"User-Agent": USER_AGENT},
+            trust_env=False,
         )
 
     def get(self, *, url: str) -> RawResponse:
