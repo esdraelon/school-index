@@ -153,6 +153,18 @@ def test_drive_rejects_non_file_shapes() -> None:
     assert not strategy.matches(url="https://docs.google.com/file/d/XyZ789/view")
 
 
+def test_fetch_on_unmatched_url_is_a_defensive_failure() -> None:
+    # fetch() re-checks the shape itself: called off-chain (which the
+    # harvester never does), it fails as data rather than crashing.
+    downloader = FakeDownloader()
+    for strategy in (GoogleDocsExportStrategy(), DriveFileDownloadStrategy()):
+        outcome = strategy.fetch(
+            resource=make_resource("https://example.com/x"), downloader=downloader
+        )
+        assert isinstance(outcome, DownloadFailed)
+    assert downloader.requested == []
+
+
 # -- ExternalLinkStrategy + the chain -----------------------------------
 
 

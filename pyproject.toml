@@ -51,6 +51,13 @@ testpaths = ["tests/unit"]
 # below this.
 [tool.coverage.run]
 source = ["school_index"]
+# Entry shims (`python -m ...`) are omitted from measurement: their
+# three lines are an interpreter guard, and coverage's tracer does not
+# attribute in-process re-execution of a __main__ file under pytest.
+# Their behavior is proven instead by the entry-point tests (real
+# subprocess exit codes + in-process SystemExit propagation). The
+# adapter's identical shim lives under the same convention.
+omit = ["*/__main__.py"]
 
 [tool.coverage.report]
 fail_under = 90

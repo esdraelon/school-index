@@ -16,9 +16,12 @@ import pytest
 import uvicorn
 from mcp.server.fastmcp import FastMCP
 
+from mcp.types import CallToolResult, ImageContent, TextContent
+
 from school_index.corpus_sync.client import (
     McpResourceSource,
     PayloadError,
+    _unwrap_result,
     parse_resources,
 )
 
@@ -84,6 +87,17 @@ def test_parse_rejects_payload_without_a_list() -> None:
         parse_resources("not a payload")
 
 
+def test_parse_rejects_non_object_item() -> None:
+    with pytest.raises(PayloadError, match="expected an object"):
+        parse_resources({"result": [42]})
+
+
+def test_parse_rejects_non_object_student() -> None:
+    bad = [{"student": "sam", "url": "https://example.com"}]
+    with pytest.raises(PayloadError, match="student"):
+        parse_resources(bad)
+
+
 def test_parse_rejects_item_without_url() -> None:
     bad = [{"student": {"id": "sam"}, "title": "x"}]
     with pytest.raises(PayloadError, match="url"):
@@ -107,6 +121,36 @@ def test_source_calls_get_resources_through_injected_transport() -> None:
     resources = source.list_resources(student="sam")
     assert calls == [("get_resources", {"student": "sam"})]
     assert len(resources) == 3
+
+
+def test_unwrap_prefers_structured_content() -> None:
+    result = CallToolResult(
+        content=[TextContent(type="text", text='{"result": [1]}')],
+        structuredContent={"result": [1, 2]},
+    )
+    assert _unwrap_result(result, tool="get_resources") == {"result": [1, 2]}
+
+
+def test_unwrap_falls_back_to_text_json() -> None:
+    result = CallToolResult(
+        content=[TextContent(type="text", text='{"result": []}')]
+    )
+    assert _unwrap_result(result, tool="get_resources") == {"result": []}
+
+
+def test_unwrap_rejects_error_results() -> None:
+    result = CallToolResult(
+        content=[TextContent(type="text", text="boom")], isError=True
+    )
+    with pytest.raises(PayloadError, match="error result"):
+        _unwrap_result(result, tool="get_resources")
+
+
+def test_unwrap_rejects_content_without_text() -> None:
+    image = ImageContent(type="image", data="aGk=", mimeType="image/png")
+    result = CallToolResult(content=[image])
+    with pytest.raises(PayloadError, match="no usable content"):
+        _unwrap_result(result, tool="get_resources")
 
 
 @pytest.fixture(scope="module")

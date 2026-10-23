@@ -18,7 +18,10 @@ from school_index.corpus_sync.fetch import RawResponse
 from school_index.corpus_sync.harvester import Harvester
 from school_index.corpus_sync.lookup import Found
 from school_index.corpus_sync.store import CorpusStore
-from school_index.corpus_sync.strategies import build_strategies
+from school_index.corpus_sync.strategies import (
+    GoogleDocsExportStrategy,
+    build_strategies,
+)
 
 FIXED_NOW = datetime(2026, 10, 23, 13, 0, tzinfo=timezone.utc)
 SCRAPED = "2026-10-23T05:15:00+00:00"
@@ -231,6 +234,20 @@ def test_sync_state_records_the_run(store: CorpusStore) -> None:
     assert state.last_status == "partial"  # one failure in the fixture set
     assert state.watermark == SCRAPED
     assert state.counts["total"] == 4 and state.counts["failed"] == 1
+
+
+def test_non_total_strategy_chain_raises(store: CorpusStore) -> None:
+    # The production chain ends in a catch-all; a hand-built chain
+    # without one is a programming error and must say so, loudly.
+    harvester = Harvester(
+        source=FakeSource([resource(IXL_URL)]),
+        downloader=FakeDownloader(canned_downloads()),
+        strategies=(GoogleDocsExportStrategy(),),
+        store=store,
+        now=lambda: FIXED_NOW,
+    )
+    with pytest.raises(RuntimeError, match="not total"):
+        harvester.run(student="sam")
 
 
 def test_source_failure_aborts_without_tombstoning(store: CorpusStore) -> None:

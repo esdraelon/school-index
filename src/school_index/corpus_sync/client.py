@@ -27,7 +27,7 @@ from typing import Any, Protocol
 import httpx
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
-from mcp.types import TextContent
+from mcp.types import CallToolResult, TextContent
 
 from school_index.corpus_sync.domain import ResourceRef
 
@@ -134,6 +134,16 @@ async def _sdk_call_tool_async(
         async with ClientSession(read_stream, write_stream) as session:
             await session.initialize()
             result = await session.call_tool(tool, dict(arguments))
+    return _unwrap_result(result, tool=tool)
+
+
+def _unwrap_result(result: CallToolResult, *, tool: str) -> object:
+    """Reduce a CallToolResult to its decoded payload (pure; unit-tested).
+
+    Structured content wins (the probed envelope shape); otherwise the
+    first text block is parsed as JSON. An error result, or a result
+    with no usable content, breaks the contract: PayloadError.
+    """
     if result.isError:
         raise PayloadError(f"MCP tool {tool!r} returned an error result")
     if result.structuredContent is not None:
