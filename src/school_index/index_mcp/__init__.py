@@ -6,6 +6,12 @@ original deep link) so consumers cite records, not recollections.
 
 Served per the gateway deployment standard: MCP at the app root,
 public host allowlisted, uvicorn proxy headers on, and its own
-path-scoped gateway token (client ``index-mcp``). The server lands
-in M4 (shell only in M0).
+path-scoped gateway token (client ``index-mcp``).
+
+Modules: ``domain`` (Passage / TopicResource records), ``store``
+(the SELECT-only IndexReadStore), ``queries`` (SearchService — the
+ranking logic), ``serializers`` (wire shapes), ``server`` (the
+FastMCP app + bearer middleware wiring), ``auth`` (the middleware),
+``config`` (environment -> ServerConfig), ``cli`` (the composition
+root: config, registry, census check, uvicorn).
 """
