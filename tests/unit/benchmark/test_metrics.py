@@ -5,6 +5,8 @@ comments; if a metric definition ever changes on purpose, the
 change shows up here as a deliberate test edit, not a drift.
 """
 
+import pytest
+
 from school_index.benchmark.domain import QueryOutcome, RankedItem, ResourceRank
 from school_index.benchmark.metrics import (
     hit_at_k,
@@ -116,9 +118,9 @@ def test_summarize_matches_hand_computed_metrics() -> None:
     assert summary.passages_hit3 == 1.0
     assert summary.passages_mrr == 0.75
     assert summary.top_chunk_hit1 == 0.5
-    assert summary.separation_resources == -0.05
+    assert summary.separation_resources == pytest.approx(-0.05)
     assert summary.separation_resources_n == 1
-    assert summary.separation_passages == 0.05
+    assert summary.separation_passages == pytest.approx(0.05)
     assert summary.separation_passages_n == 2
     assert summary.mean_latency_ms == 14.0
     assert summary.p50_latency_ms == 10.0
