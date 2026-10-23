@@ -53,5 +53,8 @@ pip install -e '.[dev]'
 ./scripts/verify.sh   # unit tests, coverage >=90, mypy strict, 500-LOC cap
 ```
 
-Status: **M0** — scaffold only. Milestones M1–M6 per
+Status: **M1** — `corpus_sync` landed: the harvester pulls Sam's
+resources through the adapter's MCP contract into the corpus store
+(SQLite metadata + original files on disk), with per-item failure
+records, tombstones, and idempotent re-runs. Milestones M2–M6 per
 `docs/PROJECT-INDEX.md` in school-assistant.
