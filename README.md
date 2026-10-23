@@ -55,8 +55,9 @@ pip install -e '.[dev]'
 ./scripts/verify.sh   # unit tests, coverage >=90, mypy strict, 500-LOC cap
 ```
 
-Status: **M4** — `corpus_sync` (M1), `doc_extract` (M2),
-`embed_index` (M3), and `index_mcp` (M4) landed. The harvester
+Status: **M6 — v1 complete** — `corpus_sync` (M1), `doc_extract`
+(M2), `embed_index` (M3), `index_mcp` (M4), the benchmark (M5),
+and the tutor contract (M6) landed. The harvester
 pulls Sam's resources through the adapter's MCP contract into the
 corpus store (SQLite metadata + original files on disk), with
 per-item failure records, tombstones, and idempotent re-runs; the
@@ -69,7 +70,37 @@ then serves the index read-only (`search_passages`,
 `resources_for_topic`, `worked_examples`) through the gateway at
 `/mcp/index/`, and a systemd timer keeps the pipeline fresh
 (sync → extract → embed every 6h at :45). See `deploy/README.md`.
-Milestones M5–M6 per `docs/PROJECT-INDEX.md` in school-assistant.
+
+## Tutor contract + match_quality (M6)
+
+The three tools return envelopes — `{"match_quality", "passages"
+| "resources"}` — frozen as **tutor contract v1** in
+`docs/TUTOR-CONTRACT.md` (fixtures:
+`tests/unit/index_mcp/test_contract.py`). `match_quality`
+("strong" | "weak") calibrates a result set as a whole: on
+"weak", the corpus likely has no material on the topic and the
+tutor must say so instead of pointing at the top hit — on absent
+topics the engine's fallback is the Team Weekly Agenda at scores
+that overlap genuine weak hits, so raw scores alone cannot gate
+pointers.
+
+The calibration (`index_mcp/quality.py`) is derived from the M5
+benchmark's recorded distributions, not tuned by feel: passages
+need a top score ≥ 0.675 plus a ≥ 0.02 margin over the runner-up
+item; resources need a #1 best_score ≥ 0.67 plus breadth
+(≥ 5 candidate hits) or a decisive best (≥ 0.72). Validated on
+the labeled set: all 4 absent probes weak on both tools, scored
+tops strong 28/29 (resources) and 27/29 (passages). The constants
+sit in one 33-query run's observed gaps on bge-small's cosine
+scale — re-derive them when the corpus or the model changes (see
+the contract doc's limits section).
+
+M6 also retuned `resources_for_topic`: items now order by the
+**band** of their best chunk (0.04 of cosine) before the breadth
+bonus applies, so breadth can no longer compensate a full-band
+relevance gap — the M5 colonial-trade miss (a 3-chunk deck with
+the query's best chunk, outranked by the 63-chunk agenda) now
+ranks #1, and the re-run benchmark records resources hit@3 1.00.
 
 ## Serving (M4): one database, WAL, readers beside writers
 
