@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+build/
+dist/
+
+# Virtual environments
+.venv/
+venv/
+
+# Test / coverage / type-check artifacts
+.coverage
+coverage.xml
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+
+# Local corpus / index data (system of record lives on hal9k)
+data/
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
