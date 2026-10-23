@@ -249,7 +249,7 @@ class BedrockTitanProvider:
             if self._client_factory is not None:
                 self._client = self._client_factory()
             else:
-                import boto3  # type: ignore[import-untyped]
+                import boto3
 
                 if self._region is not None:
                     self._client = boto3.client(

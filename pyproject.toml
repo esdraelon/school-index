@@ -82,3 +82,11 @@ show_missing = true
 # Type gate: mypy strict over the whole package.
 [tool.mypy]
 strict = true
+
+# boto3 is an optional extra (the Bedrock benchmark arm), imported
+# lazily by embed_index.providers: absent on most hosts, untyped
+# where present. Either way it is Any at the boundary, and the
+# provider's tests pin the wire shape through the client factory.
+[[tool.mypy.overrides]]
+module = "boto3"
+ignore_missing_imports = true
