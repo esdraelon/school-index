@@ -177,20 +177,23 @@ def test_all_three_tools_answer(served: tuple[str, Path]) -> None:
     passages = asyncio.run(
         _call(url, "search_passages", {"query": PYTH_TEXT.split("\n", 1)[1]})
     )
-    assert passages["result"][0]["title"] == "Pythagorean Deck"
-    assert passages["result"][0]["deep_link"] == "https://example.com/pyth"
-    assert passages["result"][0]["page"] == 1
+    assert passages["match_quality"] == "strong"
+    assert passages["passages"][0]["title"] == "Pythagorean Deck"
+    assert passages["passages"][0]["deep_link"] == "https://example.com/pyth"
+    assert passages["passages"][0]["page"] == 1
 
     resources = asyncio.run(
         _call(url, "resources_for_topic", {"topic": PYTH_TEXT.split("\n", 1)[1]})
     )
-    assert resources["result"][0]["title"] == "Pythagorean Deck"
-    assert resources["result"][0]["chunk_hits"] >= 1
+    assert resources["match_quality"] == "strong"
+    assert resources["resources"][0]["title"] == "Pythagorean Deck"
+    assert resources["resources"][0]["chunk_hits"] >= 1
 
     examples = asyncio.run(
         _call(url, "worked_examples", {"topic": PYTH_TEXT.split("\n", 1)[1]})
     )
-    assert examples["result"]  # passages come back, labeled as passages
+    assert examples["passages"]  # passages come back, labeled as passages
+    assert examples["match_quality"] in {"strong", "weak"}
 
 
 def test_serving_is_read_only(served: tuple[str, Path]) -> None:

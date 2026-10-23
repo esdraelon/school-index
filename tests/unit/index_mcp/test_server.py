@@ -79,7 +79,8 @@ def mcp_url(tmp_path: Path) -> Iterator[str]:
 
 def test_search_passages_round_trip(mcp_url: str) -> None:
     payload = asyncio.run(_call(mcp_url, "search_passages", {"query": "pythagorean"}))
-    results = payload["result"]
+    results = payload["passages"]
+    assert payload["match_quality"] == "strong"
     assert results[0]["text"].startswith("Model Pythagorean theorem")
     assert results[0]["deep_link"] == "https://example.com/deck-a"
     assert results[0]["page"] == 3
@@ -88,14 +89,16 @@ def test_search_passages_round_trip(mcp_url: str) -> None:
 
 def test_resources_for_topic_round_trip(mcp_url: str) -> None:
     payload = asyncio.run(_call(mcp_url, "resources_for_topic", {"topic": "triangles"}))
-    results = payload["result"]
+    results = payload["resources"]
+    assert payload["match_quality"] == "strong"
     assert results[0]["title"] == "Pythagorean Deck"
     assert results[0]["chunk_hits"] == 2
 
 
 def test_worked_examples_round_trip(mcp_url: str) -> None:
     payload = asyncio.run(_call(mcp_url, "worked_examples", {"topic": "pythagorean"}))
-    assert payload["result"][0]["text"].startswith("Model Pythagorean theorem")
+    assert payload["passages"][0]["text"].startswith("Model Pythagorean theorem")
+    assert payload["match_quality"] in {"strong", "weak"}
 
 
 def test_missing_token_is_401(mcp_url: str) -> None:

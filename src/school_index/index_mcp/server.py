@@ -18,6 +18,7 @@ from starlette.types import ASGIApp
 
 from school_index.index_mcp.auth import BearerTokenMiddleware
 from school_index.index_mcp.queries import SearchService
+from school_index.index_mcp.quality import assess_passages, assess_resources
 from school_index.index_mcp.serializers import (
     JsonDict,
     passage_to_dict,
@@ -69,50 +70,65 @@ def build_mcp(service: SearchService) -> FastMCP:
     @mcp.tool()
     def search_passages(
         query: str, course: str | None = None, limit: int = 5
-    ) -> list[JsonDict]:
+    ) -> JsonDict:
         """Ranked passages matching ``query``, best first.
 
-        Each result carries the passage text, its cosine score, and
+        Returns an envelope: ``match_quality`` ("strong" | "weak")
+        calibrates the result set as a whole — "weak" means the
+        corpus likely has no real material on this and the hits
+        must not be presented as on-topic — and ``passages``, each
+        carrying the passage text, its cosine score, and
         provenance: item_id, title, course, the original deep_link,
         and the page the passage starts on (null when the source
         has no page structure). ``course`` restricts to one course
         name as the school adapter reports it (e.g. "Algebra I").
         """
-        return [
-            passage_to_dict(passage)
-            for passage in service.search_passages(query, course=course, limit=limit)
-        ]
+        hits = service.search_passages(query, course=course, limit=limit)
+        return {
+            "match_quality": assess_passages(hits),
+            "passages": [passage_to_dict(passage) for passage in hits],
+        }
 
     @mcp.tool()
     def resources_for_topic(
         topic: str, course: str | None = None, limit: int = 5
-    ) -> list[JsonDict]:
+    ) -> JsonDict:
         """Resources ranked as study pointers for ``topic``.
 
-        Ranking: an item's best-matching chunk, plus a breadth
-        bonus for additional matching chunks. Each result carries
-        item_id, title, course, the original deep_link (cite this),
-        best_score, chunk_hits, and the rank_score used.
+        Returns an envelope: ``match_quality`` ("strong" | "weak")
+        for the set as a whole — on "weak" the honest answer is
+        "no material on that", not the first resource listed — and
+        ``resources``. Ranking: items are ordered by the band of
+        their best chunk's score (0.04 of cosine), then by
+        rank_score (best score plus a breadth bonus for additional
+        matching chunks). Each result carries item_id, title,
+        course, the original deep_link (cite this), best_score,
+        chunk_hits, and the rank_score used.
         """
-        return [
-            topic_resource_to_dict(resource)
-            for resource in service.resources_for_topic(
-                topic, course=course, limit=limit
-            )
-        ]
+        resources = service.resources_for_topic(topic, course=course, limit=limit)
+        return {
+            "match_quality": assess_resources(resources),
+            "resources": [
+                topic_resource_to_dict(resource) for resource in resources
+            ],
+        }
 
     @mcp.tool()
-    def worked_examples(topic: str, limit: int = 5) -> list[JsonDict]:
+    def worked_examples(topic: str, limit: int = 5) -> JsonDict:
         """Example-like passages for ``topic`` (v1).
 
-        Same shape as search_passages. v1 retrieves passages with a
-        worked-example query formulation; results are passages that
-        read as worked material, not verified worked examples.
+        Same envelope shape as search_passages, including
+        ``match_quality`` (the passages calibration, inherited —
+        the reformulated query is not separately benchmarked).
+        v1 retrieves passages with a worked-example query
+        formulation; results are passages that read as worked
+        material, not verified worked examples.
         """
-        return [
-            passage_to_dict(passage)
-            for passage in service.worked_examples(topic, limit=limit)
-        ]
+        hits = service.worked_examples(topic, limit=limit)
+        return {
+            "match_quality": assess_passages(hits),
+            "passages": [passage_to_dict(passage) for passage in hits],
+        }
 
     return mcp
 
