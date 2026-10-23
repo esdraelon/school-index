@@ -108,10 +108,18 @@ def build_arm_providers(*, models_dir: Path) -> Mapping[str, EmbeddingProvider]:
     by its own tests — serving must not be able to pick a paid
     cloud arm by config accident — so the composition happens here,
     at the benchmark's composition root.
+
+    The Bedrock region is pinned to us-east-1 (Titan's home region)
+    so the arm's availability turns on credentials alone: with no
+    region anywhere, boto3 fails with NoRegionError before ever
+    reaching the credential check, and the recorded blocked reason
+    would name the wrong blocker. A region is configuration, not
+    a credential — when credentials land, this stays a one-line
+    change if the account lives elsewhere.
     """
     return {
         **build_providers(models_dir=models_dir),
-        "bedrock-titan": BedrockTitanProvider(),
+        "bedrock-titan": BedrockTitanProvider(region="us-east-1"),
     }
 
 
