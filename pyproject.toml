@@ -16,11 +16,18 @@ requires-python = ">=3.12"
 # same pin as the adapter), and httpx (the download transport, imported
 # directly by corpus_sync.fetch). M2 (doc_extract): pypdf, the PDF
 # text layer (pure-Python — no native wheel to strand on hal9k's ARM).
-# The embedding stack arrives with M3.
+# M3 (embed_index): onnxruntime + tokenizers run BAAI/bge-small-en-v1.5
+# directly (no torch, no fastembed — the lean route, with aarch64 wheels
+# for hal9k), numpy does the vector math (and the brute-force fallback
+# store), sqlite-vec is the design's vector store (vec0 extension).
 dependencies = [
     "mcp>=1.16,<2",
     "httpx>=0.27",
     "pypdf>=5",
+    "numpy>=1.26",
+    "onnxruntime>=1.17",
+    "tokenizers>=0.19",
+    "sqlite-vec>=0.1.6",
 ]
 
 [project.optional-dependencies]

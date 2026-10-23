@@ -79,12 +79,37 @@ CREATE TABLE extraction_state (
 CREATE INDEX idx_extraction_state_outcome ON extraction_state (outcome);
 """
 
+_V3 = """
+CREATE TABLE chunks (
+    id       INTEGER PRIMARY KEY,
+    item_id  TEXT NOT NULL,
+    ordinal  INTEGER NOT NULL,
+    heading  TEXT,
+    text     TEXT NOT NULL,
+    UNIQUE (item_id, ordinal)
+);
+CREATE INDEX idx_chunks_item ON chunks (item_id);
+
+CREATE TABLE embed_state (
+    item_id     TEXT PRIMARY KEY,
+    source_hash TEXT,
+    model_id    TEXT NOT NULL,
+    chunk_count INTEGER NOT NULL,
+    embedded_at TEXT NOT NULL
+);
+"""
+
 #: Ordered (version, SQL) migrations. Append-only: never edit a shipped one.
 #: One chain for the one database file: v2's tables are doc_extract's
-#: (its repository lives there — see doc_extract/store.py), but the
-#: migration mechanics stay here so the file's schema history is a
+#: (its repository lives there — see doc_extract/store.py), v3's are
+#: embed_index's (chunks + embed_state; the vectors themselves live in
+#: the vector backend's own table — a vec0 virtual table when
+#: sqlite-vec loads, a BLOB table otherwise — created by the backend,
+#: not here, because vec0's CREATE needs the extension loaded on the
+#: connection, which is a runtime property, not schema history), but
+#: the migration mechanics stay here so the file's schema history is a
 #: single ordered story instead of two registries racing on one file.
-MIGRATIONS: tuple[tuple[int, str], ...] = ((1, _V1), (2, _V2))
+MIGRATIONS: tuple[tuple[int, str], ...] = ((1, _V1), (2, _V2), (3, _V3))
 
 
 def migrate(connection: sqlite3.Connection) -> None:
