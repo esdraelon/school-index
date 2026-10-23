@@ -57,8 +57,34 @@ CREATE TABLE sync_state (
 );
 """
 
+_V2 = """
+CREATE TABLE item_text (
+    item_id      TEXT PRIMARY KEY,
+    text         TEXT NOT NULL,
+    extractor    TEXT NOT NULL,
+    extracted_at TEXT NOT NULL
+);
+
+CREATE TABLE extraction_state (
+    item_id      TEXT PRIMARY KEY,
+    outcome      TEXT NOT NULL,
+    extractor    TEXT,
+    source_hash  TEXT,
+    format       TEXT NOT NULL,
+    char_count   INTEGER NOT NULL,
+    page_count   INTEGER,
+    error        TEXT,
+    extracted_at TEXT NOT NULL
+);
+CREATE INDEX idx_extraction_state_outcome ON extraction_state (outcome);
+"""
+
 #: Ordered (version, SQL) migrations. Append-only: never edit a shipped one.
-MIGRATIONS: tuple[tuple[int, str], ...] = ((1, _V1),)
+#: One chain for the one database file: v2's tables are doc_extract's
+#: (its repository lives there — see doc_extract/store.py), but the
+#: migration mechanics stay here so the file's schema history is a
+#: single ordered story instead of two registries racing on one file.
+MIGRATIONS: tuple[tuple[int, str], ...] = ((1, _V1), (2, _V2))
 
 
 def migrate(connection: sqlite3.Connection) -> None:
@@ -184,6 +210,20 @@ class CorpusStore:
         rows = connection.execute(
             "SELECT * FROM corpus_items WHERE student = ? ORDER BY source_ref",
             (student,),
+        ).fetchall()
+        return [_row_to_item(row) for row in rows]
+
+    def all_items(self) -> list[CorpusItem]:
+        """Every row in the corpus, any student or status.
+
+        The candidate query for downstream pipeline stages (M2's
+        extraction): they scope by status/format themselves, so the
+        store stays a dumb collection read.
+        """
+        connection = self._connect()
+        connection.row_factory = sqlite3.Row
+        rows = connection.execute(
+            "SELECT * FROM corpus_items ORDER BY source_ref"
         ).fetchall()
         return [_row_to_item(row) for row in rows]
 
