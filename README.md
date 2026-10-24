@@ -38,13 +38,22 @@ contract** (`get_resources`) — never its database — and
 consumer of the domain types yet.
 
 Evidence (live gateway probe, 2026-10-23): `get_resources("sam")`
-returned all **200 resources in a single call, no pagination** —
-TUTORIAL 102, LINK 57, DOCUMENT 21, NOTES 20 — each carrying
-student, course, title, kind, url, source_kind, and scraped_at,
-with a url on all 200 (docs.google.com 129, drive.google.com 44,
-www.ixl.com 19, sites.google.com 7, www.google.com 1). At this
-scale the contract is the boundary; revisit extraction only when
-a second type consumer actually appears (see DECISIONS.md in
+returned **200 resources in a single call** — TUTORIAL 102,
+LINK 57, DOCUMENT 21, NOTES 20 — each carrying student, course,
+title, kind, url, source_kind, and scraped_at, with a url on all
+200 (docs.google.com 129, drive.google.com 44, www.ixl.com 19,
+sites.google.com 7, www.google.com 1).
+
+**Correction (Phase 0 audit, 2026-10-24): the 200 was the
+adapter's default limit, not the total.** The true total is 398
+rows / 197 distinct URLs, so the M1 harvest was INCOMPLETE (98
+distinct URLs never harvested, plus false tombstones for live
+items that drifted past the title-200 boundary). The contract is
+still the boundary — but the boundary requires paging to
+exhaustion with a coverage proof. See
+`docs/HARVEST-PAGING.md` for the verdict, the numbers, and the
+fix-milestone requirement. Revisit extraction only when a second
+type consumer actually appears (see DECISIONS.md in
 school-assistant).
 
 ## Development
