@@ -100,6 +100,141 @@ in-process; adapter store as scraped that morning):
    `match_quality` calibration constants against the enlarged
    corpus. The M5/M6 numbers stand for the 99-item corpus only.
 
+## Fix (branch `stack/harvest-paging-fix`, 2026-10-24 — UNMERGED)
+
+Implements the requirement above. `McpResourceSource` pages to
+exhaustion (probe leg at `limit: 100000` + course × kind cross
+product at the default limit, deduped by `source_ref` into
+`ListedResources`); a partition at exactly 200 raises
+`PayloadError`; all calls use `student_id`. The harvester
+tombstones only on an exhaustive listing and records
+`partition_union` / `probe_distinct` / `partition_calls` in
+`sync_state` (status `partial` on any disagreement or failure).
+Regression tests seed a fake adapter past the 200 boundary
+(250 items, drifted-title no-tombstone, partition-at-200 loud
+failure, disagreement → partial). Gates green on both machines
+(`scripts/verify.sh`: 98% unit coverage, mypy strict, LOC cap,
+7 system tests; hal9k run from a separate worktree checkout so
+the timer's checkout was untouched).
+
+### Live re-run (hal9k, pipeline path, 2026-10-24T13:43Z)
+
+Sync: `total=197 exhaustive=True probe_distinct=197
+partition_calls=25` (1 probe + 6 courses × 4 kinds),
+`downloaded=26 link_only=11 unchanged=65 failed=95
+tombstoned=0`. Failures: sign-in page ×86, HTTP 401 ×7,
+HTTP 404 ×2 — the sign-in-walled set is the profile-birth unlock
+set, unchanged in kind by this fix.
+
+| Census | Old (99-item corpus) | New | Delta |
+|---|---|---|---|
+| Distinct resources | 99 | 197 | +98 |
+| ok / failed / tombstoned | 67 / 27 / 5 | 102 / 95 / 0 | +35 / +68 / −5 |
+| Extracted texts (`item_text`) | 40 (38 extracted + 2 empty) | 64 (59 extracted + 5 empty) | +24 |
+| Chunked items / chunks | 38 / 371 | 59 / 629 | +21 / +258 |
+
+Chunk arithmetic, stated plainly: the embed stage wrote 273
+new chunks; net is +258 because re-embedded items' old chunks
+are replaced (15), per `replace_item_chunks`. The 5 false
+tombstones are all restored, now `failed` (sign-in page) —
+live in the adapter, unfetchable without profile birth, no
+longer tombstoned.
+
+**Timer caveat (read this before relying on the new census):**
+the 6-hour timer still runs the old code until this branch is
+merged + deployed. Its next run (12:45 CDT 2026-10-24) will
+re-truncate to 200 and can re-tombstone items past the boundary.
+The re-run above is evidence and a temporary correction, not a
+durable fix — durability is the merge/deploy decision.
+
+### Benchmark re-run (materiality fired; set v1.0, labels unchanged)
+
+`onnx-production-v1.0-20261024T135217348051` on the new corpus
+(59 items / 629 chunks) vs M6 `...20261023T161119188397`
+(38 / 371). All 29 scored queries' expected ids are still ok +
+chunked. No hit@3 misses in either run.
+
+| Metric | Before (M6) | After (new corpus) |
+|---|---|---|
+| Resources hit@1 / hit@3 / MRR | 0.97 / 1.00 / 0.977 | 0.86 / 1.00 / 0.920 |
+| Passages hit@1 / hit@3 / MRR | 0.97 / 1.00 / 0.977 | 0.79 / 1.00 / 0.891 |
+| Top-chunk hit@1 | 0.97 | 0.79 |
+| Separation res / pas | +0.099 / +0.104 | +0.056 / +0.057 |
+| Absent-probe mean top (resources) | 0.677 | 0.681 |
+| Mean latency | ~30 ms | 34 ms |
+
+Reported plainly: **hit@1 and MRR degraded while hit@3 held.**
+The enlarged corpus adds near-neighbors that steal #1 without
+displacing the right pointer from the top 3 — e.g. q01
+hypotenuse (new item tops at 0.785 over the expected 0.733),
+q20 Jamestown (res 1→3, pas 1→2), q07/q08 slope-intercept
+(passages 1→2 on new Algebra I keys). This is competition, not
+embedding failure: the pointer still lands in the top 3 every
+time, but #1 is now a noisier slot. The Bedrock arm was not
+re-run (still credential-blocked, same as M5/M6).
+
+### Absent-probe revalidation: NO re-labeling (evidence, not inertia)
+
+All four v1.0 absent probes were re-examined against extracted
+text, not just rankings — and all four stay absent, so no v1.1
+set was cut:
+
+- **q13 two-step equations:** zero "two-step"/"two step"
+  mentions corpus-wide; "2-step" only in the agenda. The new
+  passages top (0.719) is a Literal Equations answer key —
+  solve-for-a-variable practice, not two-step practice. The
+  "Multi-Step Equations" hit is a 469-char review outline
+  (section header, no problems). A listing is not material.
+- **q27 water cycle:** zero "water cycle" mentions; the new top
+  is an ELA literary-essay deck (68 chunks, zero water
+  vocabulary in 54,779 chars) — omnibus fallback, not science
+  notes. The only "Water Cycling" mention corpus-wide is a
+  standards phrase in the year-at-a-glance sheet.
+- **q28 cells reaction:** only a standards listing ("Chemical
+  Reactions & Matter") in the year-at-a-glance sheet; no
+  explanatory material on reactions in cells.
+- **q33 cylinder surface area:** the top is the Math 8
+  curriculum overview, which names the objective ("solve for
+  the lateral and total surface area of … cylinders") but
+  teaches nothing; the only new geometry item is Volume of
+  cones. Same item topped the probe in v1.0 and was judged
+  absent then — consistency holds.
+
+### match_quality re-derivation: constants NOT carried over blindly
+
+Re-derived from the served window (limit 5) over the new
+corpus with the current constants, 29 scored / 4 absent:
+
+- **Passages: 4/4 absent weak (holds), scored 26/29 strong
+  (was 27/29).** New scored weak: q31 (top 0.6755, margin
+  exactly 0.0 — the identical-tutorial-schedules tie). Absent
+  tops: 0.7194 / 0.6737 / 0.6601 / 0.6891; absent margins
+  0.0099 / 0.0058 / 0.0416 / 0.0098. The decisive arm survives
+  by **0.0006**: the q13 absent top is 0.719404 raw against
+  the 0.72 threshold (was 0.701, margin 0.019). The 0.72
+  constant now sits on a knife-edge — the next corpus growth
+  can cross it, and the gate (0.675) no longer separates at
+  all (absent max 0.7194 > scored min 0.6755).
+- **Resources: 3/4 absent weak (REGRESSED from 4/4).**
+  q27 water-cycle now validates **strong**: best 0.6737
+  clears the 0.67 gate and the 68-chunk ELA omnibus holds 24
+  candidate hits, clearing the breadth arm (≥ 5). The breadth
+  arm's assumption — a document truly about a topic matches
+  in several places — fails for omnibus decks, which match
+  weakly in many places. Scored resources 27/29 strong (was
+  28/29); newly weak is q23 (0.6812, 3 hits); q25 stays weak
+  (genuinely wrong #1, as in M6).
+- **Verdict + follow-up (no silent edit):** `quality.py` was
+  deliberately NOT changed — the tutor contract is frozen and
+  retuning thresholds is a contract decision, not a harvest
+  fix. The follow-up for the coordinator: the resources
+  breadth arm needs an omnibus-aware revision (e.g. a score
+  floor on counted hits, or a higher gate) and the passages
+  decisive threshold needs re-derivation headroom before the
+  post-Classroom corpus lands; until then, `resources_for_topic`
+  can over-claim on absent topics whose nearest neighbor is a
+  large omnibus deck.
+
 ## Open item — agent-at-ingestion validation (NOT scoped work)
 
 From school-assistant `docs/REFINEMENT-NOTES.md` (Noah,

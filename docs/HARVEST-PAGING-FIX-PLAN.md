@@ -196,13 +196,21 @@ a fixture tool whose signature accepts the new arguments.
 - [x] Existing fakes migrated to the new port shape
 - [x] Gates green on this VM: `scripts/verify.sh`
       (unit, ≥90% coverage, mypy strict, 500-LOC cap, system)
-- [ ] Branch pushed to `ululuth`
-- [ ] Gates green on hal9k (same `scripts/verify.sh`, branch checkout)
-- [ ] Live pipeline re-run on hal9k (sync → extract → embed);
+- [x] Branch pushed to `ululuth`
+- [x] Gates green on hal9k (same `scripts/verify.sh`, branch checkout)
+- [x] Live pipeline re-run on hal9k (sync → extract → embed);
       5 tombstones restored + 98 missed arrived; new census + delta
-- [ ] Benchmark v1.0 re-run on new corpus (before/after table)
-- [ ] Absent-probe revalidation with topical evidence; set v1.1
-- [ ] Benchmark v1.1 re-run; match_quality re-derivation + verdict
+- [x] Benchmark v1.0 re-run on new corpus (before/after table)
+- [x] Absent-probe revalidation with topical evidence; set v1.1
+      — outcome: NO re-labeling (all 4 probes stay absent, see
+      docs/HARVEST-PAGING.md fix section); no v1.1 was cut
+- [x] Benchmark v1.1 re-run; match_quality re-derivation + verdict
+      — no v1.1 run (labels unchanged); re-derivation done against
+      the v1.0 re-run (see fix section): passages rule holds 4/4
+      absent weak but the 0.72 decisive margin collapsed to 0.0006;
+      resources rule REGRESSED (q27 absent now validates strong —
+      omnibus breadth arm). Constants NOT changed: follow-up for
+      the coordinator, not a silent contract edit
 - [ ] Repo docs updated (README census/benchmark, HARVEST-PAGING fix note)
 - [ ] Final report: branch + tip, gates evidence both machines,
       census old vs new, benchmark before/after, revalidation +

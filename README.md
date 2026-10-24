@@ -80,6 +80,20 @@ then serves the index read-only (`search_passages`,
 `/mcp/index/`, and a systemd timer keeps the pipeline fresh
 (sync → extract → embed every 6h at :45). See `deploy/README.md`.
 
+### Harvest paging fix (branch `stack/harvest-paging-fix`, unmerged 2026-10-24)
+
+The M1 harvest consumed a single default-limit (200) adapter
+page as the whole world: 98 of 197 distinct resources were
+never harvested and 5 live items were falsely tombstoned. The
+fix branch pages `get_resources` to exhaustion (probe leg +
+course × kind partitions, tombstone guard, coverage proof in
+`sync_state`) — full writeup, new census (197 distinct: 102 ok /
+95 failed / 0 tombstoned; 59 chunked items / 629 chunks),
+benchmark re-run, absent-probe revalidation, and
+`match_quality` re-derivation in `docs/HARVEST-PAGING.md`
+("Fix" section). Until the branch merges + deploys, the timer
+still runs the old code and will re-truncate on its next run.
+
 ## Tutor contract + match_quality (M6)
 
 The three tools return envelopes — `{"match_quality", "passages"
