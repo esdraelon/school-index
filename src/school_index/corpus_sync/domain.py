@@ -87,6 +87,30 @@ class CorpusItem:
 
 
 @dataclass(frozen=True, kw_only=True)
+class ListedResources:
+    """What a resource source proves about one harvest's world.
+
+    Pattern: coverage record — the paging fix's core type. A bare
+    list cannot say whether it is complete, and the 2026-10-24
+    incident was exactly a bare 200-row list mistaken for the
+    world. ``resources`` is the deduplicated partition union;
+    ``probe_distinct`` is the distinct count of an independent
+    leg (an explicit-large-limit probe); ``exhaustive`` is True
+    only when the union agrees with the probe AND no partition
+    hit the adapter's default limit (a partition at the limit is
+    possibly-truncated, so the source raises instead of returning
+    a doubtful union — see client.py). The harvester tombstones
+    only on an exhaustive listing; anything else degrades visibly
+    as ``partial``.
+    """
+
+    resources: tuple[ResourceRef, ...]
+    probe_distinct: int
+    partition_calls: int
+    exhaustive: bool
+
+
+@dataclass(frozen=True, kw_only=True)
 class SyncState:
     """One row of ``sync_state``: the per-source health record.
 
@@ -123,6 +147,13 @@ class SyncReport:
     failed: int
     tombstoned: int
     failures: tuple[tuple[str, str], ...] = ()
+    #: Coverage proof for this run (see ListedResources). Defaults
+    #: are "not proven": a hand-built report never claims
+    #: exhaustiveness it did not measure; the harvester always sets
+    #: these explicitly from the source's listing.
+    exhaustive: bool = False
+    probe_distinct: int = 0
+    partition_calls: int = 0
 
     def failure_tally(self) -> dict[str, int]:
         """Failure reasons tallied, e.g. ``{"HTTP 403": 12}``."""

@@ -23,6 +23,30 @@ the request's scope is their scope.
 A payload that breaks the contract raises ``PayloadError``: that is
 a systemic failure (the harvest cannot know what the world looks
 like), unlike a per-item download failure, which is data.
+
+Paging to exhaustion (the 2026-10-24 fix): the adapter has no
+cursor/offset and truncates silently at a default limit of 200
+(see the adapter's ``deploy/README.md``, "MCP collection
+contract"). ``McpResourceSource.list_resources`` therefore never
+trusts a single call:
+
+1. an independent leg — ``get_resources`` with an explicit large
+   limit — whose distinct count is the total to check against;
+2. course × kind partitions, each at the default limit, whose
+   deduplicated union is the listing. A partition returning
+   exactly the default limit is possibly-truncated, so it raises
+   ``PayloadError`` (fail loudly: there is no finer tool
+   partition — no title-range param exists — to subdivide with);
+3. ``ListedResources.exhaustive`` is True only when the union
+   agrees with the probe leg.
+
+Course-filter union semantics do the courseless rows' work: the
+adapter matches courseless records under every course filter, so
+the cross product (not just the observed course × kind pairs)
+carries every courseless row of a kind in every course's
+partition of that kind. Blank-kind rows cannot be partitioned
+(the adapter rejects an unknown kind) and surface as a
+union/probe disagreement — partial, never silently complete.
 """
 
 import asyncio
@@ -35,10 +59,19 @@ from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 from mcp.types import CallToolResult, TextContent
 
-from school_index.corpus_sync.domain import ResourceRef
+from school_index.corpus_sync.domain import ListedResources, ResourceRef
 
 #: The transport seam: (tool name, arguments) -> decoded tool payload.
 Transport = Callable[[str, Mapping[str, Any]], object]
+
+#: The adapter's default limit (contract: deploy/README.md). A
+#: partition returning exactly this many rows is possibly-truncated.
+DEFAULT_LIMIT = 200
+
+#: The independent leg's explicit limit: far above any plausible
+#: one-student corpus, so the probe is a total, not a page. A probe
+#: returning exactly this many rows raises (it may itself be cut).
+PROBE_LIMIT = 100000
 
 
 class PayloadError(Exception):
@@ -48,8 +81,12 @@ class PayloadError(Exception):
 class ResourceSource(Protocol):
     """Where resources come from, as a port. Impl: McpResourceSource."""
 
-    def list_resources(self, *, student: str) -> list[ResourceRef]:
-        """All resources the adapter reports for ``student``."""
+    def list_resources(self, *, student: str) -> ListedResources:
+        """All resources the adapter reports for ``student``, with proof.
+
+        The listing is exhaustive (see ListedResources) or it says
+        so: the harvester tombstones only on an exhaustive listing.
+        """
         ...
 
 
@@ -180,7 +217,11 @@ def _sdk_call_tool(
 
 
 class McpResourceSource:
-    """ResourceSource over the school adapter's MCP (streamable HTTP)."""
+    """ResourceSource over the school adapter's MCP (streamable HTTP).
+
+    Paging to exhaustion (see the module docstring): one probe leg
+    plus course × kind partitions, deduplicated by ``source_ref``.
+    """
 
     def __init__(
         self, *, url: str, token: str, transport: Transport | None = None
@@ -193,6 +234,53 @@ class McpResourceSource:
             )
         )
 
-    def list_resources(self, *, student: str) -> list[ResourceRef]:
-        payload = self._transport("get_resources", {"student": student})
+    def _call(self, *, student: str, arguments: Mapping[str, Any]) -> list[ResourceRef]:
+        """One get_resources call, translated (never trusted for coverage)."""
+        payload = self._transport(
+            "get_resources", {"student_id": student, **arguments}
+        )
         return parse_resources(payload, default_student=student)
+
+    def list_resources(self, *, student: str) -> ListedResources:
+        probe = self._call(student=student, arguments={"limit": PROBE_LIMIT})
+        if len(probe) >= PROBE_LIMIT:
+            raise PayloadError(
+                f"get_resources probe returned {len(probe)} rows at limit "
+                f"{PROBE_LIMIT}: the probe itself may be truncated"
+            )
+        probe_refs = {resource.source_ref for resource in probe}
+        courses = sorted({r.course_name for r in probe if r.course_name is not None})
+        kinds = sorted({r.kind for r in probe if r.kind})
+        partitions: list[tuple[str | None, str | None]] = (
+            [(course, kind) for course in courses for kind in kinds]
+            if courses and kinds
+            else [(None, kind) for kind in kinds]
+            if kinds
+            else []
+        )
+        union: dict[str, ResourceRef] = {}
+        calls = 1  # the probe leg
+        for course, kind in partitions:
+            arguments: dict[str, Any] = {}
+            if course is not None:
+                arguments["course_name"] = course
+            if kind is not None:
+                arguments["kind"] = kind
+            page = self._call(student=student, arguments=arguments)
+            calls += 1
+            if len(page) >= DEFAULT_LIMIT:
+                raise PayloadError(
+                    f"get_resources partition course={course!r} kind={kind!r} "
+                    f"returned {len(page)} rows at the default limit "
+                    f"{DEFAULT_LIMIT}: possibly truncated, no finer "
+                    "partition exists — refusing to serve a capped page "
+                    "as complete"
+                )
+            for resource in page:
+                union.setdefault(resource.source_ref, resource)
+        return ListedResources(
+            resources=tuple(union.values()),
+            probe_distinct=len(probe_refs),
+            partition_calls=calls,
+            exhaustive=len(union) == len(probe_refs),
+        )

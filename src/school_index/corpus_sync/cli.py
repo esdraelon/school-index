@@ -55,6 +55,13 @@ def main(argv: list[str] | None = None) -> int:
         f"sync student={report.student} source={SOURCE_NAME} total={report.total}"
     )
     print(
+        "coverage exhaustive={} probe_distinct={} partition_calls={}".format(
+            report.exhaustive,
+            report.probe_distinct,
+            report.partition_calls,
+        )
+    )
+    print(
         "downloaded={} link_only={} unchanged={} failed={} tombstoned={}".format(
             report.downloaded,
             report.link_only,

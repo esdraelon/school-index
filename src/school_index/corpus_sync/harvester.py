@@ -69,9 +69,19 @@ class Harvester:
         self._now = now or (lambda: datetime.now(timezone.utc))
 
     def run(self, *, student: str) -> SyncReport:
-        """Harvest one student's resources; returns the run report."""
+        """Harvest one student's resources; returns the run report.
+
+        Tombstoning requires an exhaustive listing (see
+        ListedResources): a run that cannot prove the world it
+        saw is the whole world tombstones nothing — an item
+        absent from a partial listing is "unproven", never
+        "vanished". That is the 2026-10-24 lesson: the old
+        single-call harvest tombstoned live items that had
+        drifted past the adapter's title-200 boundary.
+        """
         at = _iso(self._now())
-        resources = self._source.list_resources(student=student)
+        listed = self._source.list_resources(student=student)
+        resources = listed.resources
         seen: set[str] = set()
         downloaded = link_only = unchanged = failed = 0
         failures: list[tuple[str, str]] = []
@@ -102,8 +112,10 @@ class Harvester:
                     self._absorb_failure(resource, error, at=at)
                     failed += 1
                     failures.append((resource.source_ref, error))
-        tombstoned = self._store.tombstone_missing(
-            student=student, seen_refs=seen, at=at
+        tombstoned = (
+            self._store.tombstone_missing(student=student, seen_refs=seen, at=at)
+            if listed.exhaustive
+            else 0
         )
         counts = {
             "total": len(resources),
@@ -112,13 +124,18 @@ class Harvester:
             "unchanged": unchanged,
             "failed": failed,
             "tombstoned": tombstoned,
+            "partition_union": len(resources),
+            "probe_distinct": listed.probe_distinct,
+            "partition_calls": listed.partition_calls,
         }
         self._store.record_sync(
             SyncState(
                 source=SOURCE_NAME,
                 watermark=max((r.scraped_at for r in resources), default=None),
                 last_run_at=at,
-                last_status="ok" if failed == 0 else "partial",
+                last_status=(
+                    "ok" if failed == 0 and listed.exhaustive else "partial"
+                ),
                 counts=counts,
             )
         )
@@ -131,6 +148,9 @@ class Harvester:
             failed=failed,
             tombstoned=tombstoned,
             failures=tuple(failures),
+            exhaustive=listed.exhaustive,
+            probe_distinct=listed.probe_distinct,
+            partition_calls=listed.partition_calls,
         )
 
     # -- outcome folding ------------------------------------------------
