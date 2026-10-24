@@ -202,6 +202,6 @@ from the deploy-run env, never printed/logged/committed):
 - [x] Helper-path benchmark (33 queries) before/after table;
       stop on any regression
 - [x] Live-MCP raw vs reformulated evidence (misconception cases)
-- [x] Report: branch + tip, gates evidence both machines,
+- [ ] Report: branch + tip, gates evidence both machines,
       benchmark tables, reformulation evidence, surprises,
       contract follow-ups noted (not fixed)
