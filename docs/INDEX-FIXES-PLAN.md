@@ -68,9 +68,9 @@ serializer — coding standard: pure serializer functions):
      raw title as a prefix so the result stays recognizable:
      `"<title> — <course> · <heading> · <snippet>"`;
      empty-title form: `"<course> · <heading> · <snippet>"`
-     (course absent → `No course`; heading absent → no heading
-     segment; snippet empty → fall back to `Untitled
-     (<item_id[:8]>)`, the last-resort deterministic handle).
+     (course absent → `No course`, so the core is never empty;
+     heading absent → no heading segment; snippet empty → no
+     snippet segment).
    - snippet: first chunk text, whitespace collapsed, first 80
      chars, cut at a word boundary with an ellipsis when cut.
    Scope note (deliberate): duplication is judged within the

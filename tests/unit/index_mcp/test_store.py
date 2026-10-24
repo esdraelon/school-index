@@ -84,6 +84,26 @@ def test_search_joins_provenance_and_ranks(tmp_path: Path) -> None:
     assert scores == sorted(scores, reverse=True)
 
 
+def test_search_carries_each_items_first_chunk(tmp_path: Path) -> None:
+    build_index(tmp_path, [DECK_A, SCI_B, WS_C])
+    reader = IndexReadStore.open(tmp_path, dim=StubProvider.dim)
+    hits = reader.search(
+        query_vector=(1.0, 0.0), model_id="stub-2d", course=None, fetch_limit=10
+    )
+    by_title = {hit.title: hit for hit in hits}
+    # DECK_A's second chunk (page 4) still reports the FIRST chunk's
+    # anchor + text: the fallback disambiguator is per item, not
+    # per hit chunk.
+    deck_hits = [hit for hit in hits if hit.title == "Pythagorean Deck"]
+    assert len(deck_hits) == 2
+    assert all(hit.first_heading == "page 3" for hit in deck_hits)
+    assert all(
+        hit.first_text.startswith("Model Pythagorean theorem") for hit in deck_hits
+    )
+    assert by_title["Algebra Worksheet"].first_heading is None
+    assert by_title["Algebra Worksheet"].first_text == "Triangles drill one."
+
+
 def test_search_filters_by_course(tmp_path: Path) -> None:
     build_index(tmp_path, [DECK_A, SCI_B])
     reader = IndexReadStore.open(tmp_path, dim=StubProvider.dim)

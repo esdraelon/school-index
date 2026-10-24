@@ -22,7 +22,11 @@ class Passage:
     ([-1, 1], higher is nearer). ``heading`` is the chunk's
     structural anchor from the chunker (``"page N"`` for paged
     sources, else None); ``page`` is that anchor as an int when it
-    has the page shape.
+    has the page shape. ``first_heading`` / ``first_text`` are
+    the item's FIRST chunk's anchor and text (lowest ordinal) —
+    the presentation fallback's disambiguator (see
+    ``index_mcp.presentation``); they are internal, never
+    serialized as separate wire fields.
     """
 
     chunk_id: int
@@ -34,6 +38,8 @@ class Passage:
     course: str | None
     deep_link: str
     source_kind: str
+    first_heading: str | None = None
+    first_text: str = ""
 
     @property
     def page(self) -> int | None:
@@ -53,6 +59,10 @@ class TopicResource:
     ``rank_score`` is the documented aggregate the ranking used
     (see index_mcp.queries) — carried on the record so the wire can
     show its work instead of hiding the ordering rule.
+    ``first_heading`` / ``first_text`` are the item's first
+    chunk's anchor and text (copied from its best hit, which
+    carries them for every chunk of the item) — the presentation
+    fallback's disambiguator, internal only.
     """
 
     item_id: str
@@ -63,3 +73,5 @@ class TopicResource:
     best_score: float
     chunk_hits: int
     rank_score: float
+    first_heading: str | None = None
+    first_text: str = ""

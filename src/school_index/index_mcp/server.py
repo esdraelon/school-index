@@ -12,11 +12,15 @@ use: the service and the expected token are injected, nothing is
 read from the environment.
 """
 
+from collections.abc import Sequence
+
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 from starlette.types import ASGIApp
 
 from school_index.index_mcp.auth import BearerTokenMiddleware
+from school_index.index_mcp.domain import Passage, TopicResource
+from school_index.index_mcp.presentation import TitleContext, resolve_display_titles
 from school_index.index_mcp.queries import SearchService
 from school_index.index_mcp.quality import assess_passages, assess_resources
 from school_index.index_mcp.serializers import (
@@ -24,6 +28,26 @@ from school_index.index_mcp.serializers import (
     passage_to_dict,
     topic_resource_to_dict,
 )
+
+
+def _window_titles(results: Sequence[Passage | TopicResource]) -> dict[str, str]:
+    """Display titles for one emitted window (presentation fallback).
+
+    Every result type carries the same title fields, so one
+    helper serves all three tools instead of three copies.
+    """
+    return resolve_display_titles(
+        [
+            TitleContext(
+                item_id=result.item_id,
+                title=result.title,
+                course=result.course,
+                first_heading=result.first_heading,
+                first_text=result.first_text,
+            )
+            for result in results
+        ]
+    )
 
 
 def build_mcp(service: SearchService) -> FastMCP:
@@ -84,9 +108,13 @@ def build_mcp(service: SearchService) -> FastMCP:
         name as the school adapter reports it (e.g. "Algebra I").
         """
         hits = service.search_passages(query, course=course, limit=limit)
+        titles = _window_titles(hits)
         return {
             "match_quality": assess_passages(hits),
-            "passages": [passage_to_dict(passage) for passage in hits],
+            "passages": [
+                passage_to_dict(passage, display_title=titles[passage.item_id])
+                for passage in hits
+            ],
         }
 
     @mcp.tool()
@@ -106,10 +134,14 @@ def build_mcp(service: SearchService) -> FastMCP:
         chunk_hits, and the rank_score used.
         """
         resources = service.resources_for_topic(topic, course=course, limit=limit)
+        titles = _window_titles(resources)
         return {
             "match_quality": assess_resources(resources),
             "resources": [
-                topic_resource_to_dict(resource) for resource in resources
+                topic_resource_to_dict(
+                    resource, display_title=titles[resource.item_id]
+                )
+                for resource in resources
             ],
         }
 
@@ -125,9 +157,13 @@ def build_mcp(service: SearchService) -> FastMCP:
         material, not verified worked examples.
         """
         hits = service.worked_examples(topic, limit=limit)
+        titles = _window_titles(hits)
         return {
             "match_quality": assess_passages(hits),
-            "passages": [passage_to_dict(passage) for passage in hits],
+            "passages": [
+                passage_to_dict(passage, display_title=titles[passage.item_id])
+                for passage in hits
+            ],
         }
 
     return mcp

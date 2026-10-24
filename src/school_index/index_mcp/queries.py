@@ -127,6 +127,8 @@ class SearchService:
                 chunk_hits=counts[item_id],
                 rank_score=hit.score
                 + _BREADTH_WEIGHT * min(counts[item_id] - 1, _BREADTH_CAP),
+                first_heading=hit.first_heading,
+                first_text=hit.first_text,
             )
             for item_id, hit in best.items()
         ]

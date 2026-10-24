@@ -143,8 +143,11 @@ class IndexReadStore:
         placeholders = ", ".join("?" for _ in ranked)
         sql = (
             "SELECT c.id AS chunk_id, c.item_id, c.heading, c.text, "
-            "i.title, i.course, i.deep_link, i.source_kind "
+            "i.title, i.course, i.deep_link, i.source_kind, "
+            "f.heading AS first_heading, f.text AS first_text "
             "FROM chunks c JOIN corpus_items i ON i.id = c.item_id "
+            "LEFT JOIN chunks f ON f.item_id = c.item_id AND f.ordinal = "
+            "(SELECT MIN(ordinal) FROM chunks WHERE item_id = c.item_id) "
             f"WHERE c.id IN ({placeholders}) AND i.status = 'ok'"
         )
         params: list[object] = [chunk_id for chunk_id, _score in ranked]
@@ -164,6 +167,8 @@ class IndexReadStore:
                 course=by_id[chunk_id]["course"],
                 deep_link=str(by_id[chunk_id]["deep_link"]),
                 source_kind=str(by_id[chunk_id]["source_kind"]),
+                first_heading=by_id[chunk_id]["first_heading"],
+                first_text=str(by_id[chunk_id]["first_text"] or ""),
             )
             for chunk_id, score in ranked
             if chunk_id in by_id
