@@ -7,6 +7,7 @@ first-text snippet, not heading alone, as the disambiguator.
 """
 
 from school_index.index_mcp.domain import Passage, TopicResource
+from school_index.index_mcp.server import _window_titles
 from school_index.index_mcp.presentation import (
     TitleContext,
     fallback_title,
@@ -78,6 +79,39 @@ def test_resolve_keeps_unique_titles_and_falls_back_on_duplicates() -> None:
     assert "Second KEY text." in resolved["id-2"]
     assert resolved["id-3"] == "Pythagorean Deck"
     assert resolved["id-4"].startswith("Algebra I · page 1 · Blank worksheet.")
+
+
+def test_server_window_helper_resolves_a_duplicated_window() -> None:
+    """The server's wiring (not just the pure functions) falls back."""
+    first = TopicResource(
+        item_id="id-1",
+        title="KEY",
+        course="Algebra I",
+        deep_link="https://example.com/key-1",
+        source_kind="AGENDA",
+        best_score=0.8,
+        chunk_hits=3,
+        rank_score=0.84,
+        first_heading="page 1",
+        first_text="First KEY text.",
+    )
+    second = TopicResource(
+        item_id="id-2",
+        title="KEY",
+        course="Algebra I",
+        deep_link="https://example.com/key-2",
+        source_kind="AGENDA",
+        best_score=0.79,
+        chunk_hits=2,
+        rank_score=0.81,
+        first_heading="page 1",
+        first_text="Second KEY text.",
+    )
+    titles = _window_titles([first, second])
+    assert titles["id-1"] != titles["id-2"]
+    assert titles["id-1"].startswith("KEY — Algebra I · page 1 · First KEY text.")
+    # Pointers are untouched by the fallback: deep links stay distinct.
+    assert first.deep_link != second.deep_link
 
 
 def test_serializers_use_display_title_without_changing_keys() -> None:

@@ -187,21 +187,21 @@ from the deploy-run env, never printed/logged/committed):
 
 ## Checklist
 
-- [ ] Plan + checklist committed (this file) before code
-- [ ] `presentation.py` + store first-chunk join + serializers
+- [x] Plan + checklist committed (this file) before code
+- [x] `presentation.py` + store first-chunk join + serializers
       override + server window resolution
-- [ ] `reformulate.py` rule registry + unit tests (matches,
+- [x] `reformulate.py` rule registry + unit tests (matches,
       non-matches incl. q19, identity fallback)
-- [ ] Title-fallback fixtures: empty title, duplicated title,
+- [x] Title-fallback fixtures: empty title, duplicated title,
       unique title unchanged, fallback never empty
-- [ ] `scripts/verify.sh` green on this VM
-- [ ] Branch pushed to ululuth; hal9k worktree checkout;
+- [x] `scripts/verify.sh` green on this VM
+- [x] Branch pushed to ululuth; hal9k worktree checkout;
       `scripts/verify.sh` green on hal9k
-- [ ] Benchmark re-run on hal9k (onnx-production) + before/after
+- [x] Benchmark re-run on hal9k (onnx-production) + before/after
       table vs 2026-10-24 baseline
-- [ ] Helper-path benchmark (33 queries) before/after table;
+- [x] Helper-path benchmark (33 queries) before/after table;
       stop on any regression
-- [ ] Live-MCP raw vs reformulated evidence (misconception cases)
-- [ ] Report: branch + tip, gates evidence both machines,
+- [x] Live-MCP raw vs reformulated evidence (misconception cases)
+- [x] Report: branch + tip, gates evidence both machines,
       benchmark tables, reformulation evidence, surprises,
       contract follow-ups noted (not fixed)
