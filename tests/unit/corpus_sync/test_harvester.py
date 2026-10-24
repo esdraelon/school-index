@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from school_index.corpus_sync.client import PayloadError
-from school_index.corpus_sync.domain import ItemStatus, ResourceRef
+from school_index.corpus_sync.domain import ItemStatus, ListedResources, ResourceRef
 from school_index.corpus_sync.fetch import RawResponse
 from school_index.corpus_sync.harvester import Harvester
 from school_index.corpus_sync.lookup import Found
@@ -59,16 +59,62 @@ RESOURCES = [
 
 
 class FakeSource:
+    """A faithful new-port source: deduplicated, exhaustive listing."""
+
     def __init__(self, resources: list[ResourceRef]) -> None:
         self.resources = resources
 
-    def list_resources(self, *, student: str) -> list[ResourceRef]:
-        return list(self.resources)
+    def list_resources(self, *, student: str) -> ListedResources:
+        seen: dict[str, ResourceRef] = {}
+        for resource in self.resources:
+            seen.setdefault(resource.source_ref, resource)
+        return ListedResources(
+            resources=tuple(seen.values()),
+            probe_distinct=len(seen),
+            partition_calls=1,
+            exhaustive=True,
+        )
 
 
 class ExplodingSource:
-    def list_resources(self, *, student: str) -> list[ResourceRef]:
+    def list_resources(self, *, student: str) -> ListedResources:
         raise PayloadError("contract broke")
+
+
+class DuplicateBearingSource:
+    """A source listing that still carries repeats (defense test).
+
+    The real paging source deduplicates; the harvester's in-run
+    dedup is defense-in-depth and must still hold if a listing
+    ever repeats a ref.
+    """
+
+    def __init__(self, resources: list[ResourceRef]) -> None:
+        self.resources = resources
+
+    def list_resources(self, *, student: str) -> ListedResources:
+        return ListedResources(
+            resources=tuple(self.resources),
+            probe_distinct=len({r.source_ref for r in self.resources}),
+            partition_calls=1,
+            exhaustive=True,
+        )
+
+
+class PartialSource:
+    """A source that cannot prove exhaustion (union != probe)."""
+
+    def __init__(self, resources: list[ResourceRef], *, probe_distinct: int) -> None:
+        self.resources = resources
+        self.probe_distinct = probe_distinct
+
+    def list_resources(self, *, student: str) -> ListedResources:
+        return ListedResources(
+            resources=tuple(self.resources),
+            probe_distinct=self.probe_distinct,
+            partition_calls=1,
+            exhaustive=False,
+        )
 
 
 class FakeDownloader:
@@ -166,7 +212,7 @@ def test_repeated_resources_are_fetched_once(store: CorpusStore) -> None:
     # First occurrence syncs; repeats count as unchanged, no re-fetch.
     downloader = FakeDownloader(canned_downloads())
     deck = resource(DECK_URL, title="Pythagorean slides")
-    source = FakeSource([deck, deck, deck])
+    source = DuplicateBearingSource([deck, deck, deck])
     report = make_harvester(store, source, downloader).run(student="sam")
     assert report.total == 3
     assert report.downloaded == 1 and report.unchanged == 2
@@ -242,13 +288,16 @@ def test_metadata_drift_refreshes_row_without_rewriting_blob(
 
 
 def test_sync_state_records_the_run(store: CorpusStore) -> None:
-    make_harvester(store, FakeSource(RESOURCES)).run(student="sam")
+    report = make_harvester(store, FakeSource(RESOURCES)).run(student="sam")
     result = store.get_sync_state(source="school-mcp")
     assert isinstance(result, Found)
     state = result.value
     assert state.last_status == "partial"  # one failure in the fixture set
     assert state.watermark == SCRAPED
     assert state.counts["total"] == 4 and state.counts["failed"] == 1
+    assert state.counts["partition_union"] == 4
+    assert state.counts["probe_distinct"] == 4
+    assert report.exhaustive is True and report.probe_distinct == 4
 
 
 def test_non_total_strategy_chain_raises(store: CorpusStore) -> None:
@@ -272,3 +321,28 @@ def test_source_failure_aborts_without_tombstoning(store: CorpusStore) -> None:
     # Nothing was tombstoned on the strength of a broken contract.
     statuses = {i.status for i in store.items_for_student(student="sam")}
     assert ItemStatus.TOMBSTONED not in statuses
+
+
+def test_partial_listing_never_tombstones(store: CorpusStore) -> None:
+    # The 2026-10-24 guard: an item absent from a listing the source
+    # cannot prove exhaustive is "unproven", never "vanished".
+    make_harvester(store, FakeSource(RESOURCES)).run(student="sam")
+    # Second run lists everything except the walled doc, and claims
+    # a probe total of 99: nothing failed this run, so "partial"
+    # can only come from the unproven listing — and the walled doc
+    # must survive it untombstoned.
+    partial = PartialSource(
+        [r for r in RESOURCES if r.url != WALLED_URL], probe_distinct=99
+    )
+    report = make_harvester(store, partial).run(student="sam")
+    assert report.exhaustive is False
+    assert report.failed == 0
+    assert report.tombstoned == 0
+    result = store.get_sync_state(source="school-mcp")
+    assert isinstance(result, Found)
+    assert result.value.last_status == "partial"
+    assert result.value.counts["partition_union"] == 3
+    assert result.value.counts["probe_distinct"] == 99
+    kept = store.get_item(source_ref=f"sam:{WALLED_URL}")
+    assert isinstance(kept, Found)
+    assert kept.value.status is not ItemStatus.TOMBSTONED

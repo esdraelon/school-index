@@ -18,7 +18,7 @@ from urllib.parse import urlsplit
 import httpx
 import pytest
 
-from school_index.corpus_sync.domain import ItemStatus, ResourceRef
+from school_index.corpus_sync.domain import ItemStatus, ListedResources, ResourceRef
 from school_index.corpus_sync.fetch import HttpDownloader
 from school_index.corpus_sync.harvester import Harvester
 from school_index.corpus_sync.lookup import Found
@@ -88,8 +88,16 @@ class FixtureSource:
     def __init__(self, resources: list[ResourceRef]) -> None:
         self.resources = resources
 
-    def list_resources(self, *, student: str) -> list[ResourceRef]:
-        return list(self.resources)
+    def list_resources(self, *, student: str) -> ListedResources:
+        seen: dict[str, ResourceRef] = {}
+        for resource in self.resources:
+            seen.setdefault(resource.source_ref, resource)
+        return ListedResources(
+            resources=tuple(seen.values()),
+            probe_distinct=len(seen),
+            partition_calls=1,
+            exhaustive=True,
+        )
 
 
 @pytest.fixture

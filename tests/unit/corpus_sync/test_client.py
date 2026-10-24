@@ -137,9 +137,22 @@ def test_source_calls_get_resources_through_injected_transport() -> None:
         return {"result": FIXTURE_ITEMS}
 
     source = McpResourceSource(url="http://unused", token="t", transport=transport)
-    resources = source.list_resources(student="sam")
-    assert calls == [("get_resources", {"student": "sam"})]
-    assert len(resources) == 4
+    listed = source.list_resources(student="sam")
+    # The probe leg plus the course × kind cross product over the
+    # fixture's courses (8th Grade Team, Algebra I, Science) and
+    # kinds (DOCUMENT, NOTES, TUTORIAL): 1 + 3 × 3 calls. Every call
+    # is student-scoped with the correct argument name — the old
+    # code passed {"student": ...}, which the adapter silently
+    # ignored, returning the unscoped default page.
+    assert len(calls) == 10
+    assert calls[0] == ("get_resources", {"student_id": "sam", "limit": 100000})
+    assert all(tool == "get_resources" for tool, _ in calls)
+    assert all(args.get("student_id") == "sam" for _, args in calls)
+    assert all("student" not in args for _, args in calls)
+    assert listed.exhaustive is True
+    assert listed.probe_distinct == 4
+    assert listed.partition_calls == 10
+    assert len(listed.resources) == 4
 
 
 def test_unwrap_prefers_structured_content() -> None:
@@ -177,7 +190,16 @@ def fixture_mcp_url() -> Iterator[str]:
     server = FastMCP("fixture-school")
 
     @server.tool()
-    def get_resources(student: str) -> dict[str, Any]:
+    def get_resources(
+        student_id: str | None = None,
+        course_name: str | None = None,
+        kind: str | None = None,
+        limit: int = 200,
+    ) -> dict[str, Any]:
+        # The fixture ignores filters (the paging tests prove the
+        # filter discipline against a faithful fake adapter); the
+        # signature must accept every argument the paging client
+        # sends — probe limit, course, kind — or the SDK call fails.
         return {"result": FIXTURE_ITEMS}
 
     config = uvicorn.Config(
@@ -199,6 +221,8 @@ def fixture_mcp_url() -> Iterator[str]:
 
 def test_source_round_trips_through_real_mcp(fixture_mcp_url: str) -> None:
     source = McpResourceSource(url=fixture_mcp_url, token="fixture-token")
-    resources = source.list_resources(student="sam")
+    listed = source.list_resources(student="sam")
+    resources = listed.resources
     assert [r.kind for r in resources] == ["DOCUMENT", "TUTORIAL", "TUTORIAL", "NOTES"]
     assert resources[2].course_name == "Science"
+    assert listed.exhaustive is True

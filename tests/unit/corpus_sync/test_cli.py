@@ -17,7 +17,7 @@ import pytest
 
 from school_index.corpus_sync import cli
 from school_index.corpus_sync.client import PayloadError
-from school_index.corpus_sync.domain import ResourceRef
+from school_index.corpus_sync.domain import ListedResources, ResourceRef
 from school_index.corpus_sync.fetch import RawResponse
 
 DECK_URL = "https://docs.google.com/presentation/d/deck1/pub"
@@ -46,15 +46,21 @@ class FakeSource:
     def __init__(self, *, url: str, token: str) -> None:
         pass
 
-    def list_resources(self, *, student: str) -> list[ResourceRef]:
-        return fixture_resources()
+    def list_resources(self, *, student: str) -> ListedResources:
+        resources = fixture_resources()
+        return ListedResources(
+            resources=tuple(resources),
+            probe_distinct=len(resources),
+            partition_calls=1,
+            exhaustive=True,
+        )
 
 
 class ExplodingSource:
     def __init__(self, *, url: str, token: str) -> None:
         pass
 
-    def list_resources(self, *, student: str) -> list[ResourceRef]:
+    def list_resources(self, *, student: str) -> ListedResources:
         raise PayloadError("contract broke")
 
 
@@ -80,6 +86,7 @@ def test_main_sync_success(
     assert cli.main(["sync", "--student", "sam"]) == 0
     out = capsys.readouterr().out
     assert "total=3" in out
+    assert "coverage exhaustive=True probe_distinct=3 partition_calls=1" in out
     assert "downloaded=1 link_only=1 unchanged=0 failed=1 tombstoned=0" in out
     assert "failure: HTTP 403 ×1" in out
     assert (tmp_path / "corpus" / "corpus.db").exists()
